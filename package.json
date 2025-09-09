@@ -1,0 +1,73 @@
+{
+  "name": "obsidian-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Obsidian integration with Claude Desktop",
+  "main": "dist/index-enhanced.js",
+  "bin": {
+    "obsidian-mcp": "./dist/index-enhanced.js",
+    "obsidian-mcp-configure": "./dist/scripts/configure-claude.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:full && npm run build:scripts",
+    "build:simple": "tsc src/index-simple.ts --outDir dist --module commonjs --target es2022 --esModuleInterop",
+    "build:enhanced": "tsc src/index-enhanced.ts --outDir dist --module commonjs --target es2022 --esModuleInterop",
+    "build:full": "tsc src/index-full.ts src/plugins/*.ts --outDir dist --module commonjs --target es2022 --esModuleInterop --skipLibCheck",
+    "build:scripts": "tsc scripts/configure-claude.ts --outDir dist/scripts --module commonjs --target es2022 --esModuleInterop",
+    "dev": "tsx watch src/index-full.ts",
+    "start": "node dist/index-full.js",
+    "clean": "rm -rf dist",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run clean && npm run build",
+    "setup": "tsx scripts/setup.ts",
+    "install-mcp": "tsx scripts/install.ts",
+    "configure": "node dist/scripts/configure-claude.js",
+    "postinstall": "echo 'Run \"obsidian-mcp-configure\" to configure Claude Desktop'"
+  },
+  "keywords": [
+    "obsidian",
+    "mcp",
+    "claude",
+    "ai",
+    "notes",
+    "markdown"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.0",
+    "ts-jest": "^29.1.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rei-Nempi/obsidian-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rei-Nempi/obsidian-mcp/issues"
+  },
+  "homepage": "https://github.com/rei-Nempi/obsidian-mcp#readme"
+}
