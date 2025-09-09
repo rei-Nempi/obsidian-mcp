@@ -209,38 +209,6 @@ Once configured, you can use natural language commands in Claude:
 | `search_book_by_title` | Search books by title/author | タイトル/著者で書籍検索 |
 | `create_book_note` | Create note from book data | 書籍データからノート作成 |
 
-## Development / 開発
-
-### Project Structure / プロジェクト構造
-```
-obsidian-mcp/
-├── src/
-│   ├── index-enhanced.ts    # Main server (npm package entry)
-│   ├── index-full.ts        # Full version with all plugins
-│   ├── index-complete.ts    # Complete core features
-│   ├── index-simple.ts      # Simple version
-│   └── plugins/
-│       ├── templater.ts     # Templater plugin
-│       └── book-search.ts   # Book search plugin
-├── scripts/
-│   └── configure-claude.ts  # Auto-configuration script
-├── docs/
-│   ├── 要件定義書.md        # Requirements specification
-│   ├── 基本設計書.md        # Basic design document
-│   └── API設計書.md         # API design document
-└── dist/                    # Compiled JavaScript
-```
-
-### Building / ビルド
-```bash
-npm run build          # Full build / フルビルド
-npm run build:enhanced # Build enhanced version / 拡張版ビルド
-npm run dev           # Development mode / 開発モード
-npm test              # Run tests / テスト実行
-npm run lint          # Lint code / コードチェック
-npm run format        # Format code / コード整形
-```
-
 ## Troubleshooting / トラブルシューティング
 
 ### Vault Not Found / 保管庫が見つからない
