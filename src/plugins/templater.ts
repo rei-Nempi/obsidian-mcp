@@ -6,6 +6,23 @@ export interface TemplaterVariable {
   value: string | (() => string);
 }
 
+export interface TemplateMetadata {
+  name: string;
+  description?: string;
+  category?: string;
+  variables: TemplaterVariable[];
+  createdDate: string;
+  lastUsed?: string;
+  useCount: number;
+}
+
+export interface CustomTemplate {
+  name: string;
+  content: string;
+  metadata: TemplateMetadata;
+  filePath: string;
+}
+
 export class TemplaterPlugin {
   private vaultPath: string;
   private templatesFolder: string;
@@ -220,9 +237,479 @@ export class TemplaterPlugin {
       // Write the file
       await fs.writeFile(fullPath, processedContent, 'utf-8');
       
+      // Update template usage statistics
+      await this.updateTemplateUsage(templateName);
+      
       return { success: true, path: notePath };
     } catch (error) {
       return { success: false, error: `Failed to create note: ${error}` };
+    }
+  }
+
+  /**
+   * Create a custom template
+   */
+  async createCustomTemplate(
+    name: string,
+    content: string,
+    metadata: Partial<TemplateMetadata>,
+    customFolder?: string
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    const saveFolder = customFolder || this.templatesFolder;
+    const templatePath = path.join(this.vaultPath, saveFolder, `${name}.md`);
+    
+    try {
+      // Ensure save folder exists
+      await fs.mkdir(path.join(this.vaultPath, saveFolder), { recursive: true });
+      
+      // Create frontmatter with metadata
+      const fullMetadata: TemplateMetadata = {
+        name,
+        description: metadata.description || '',
+        category: metadata.category || 'custom',
+        variables: metadata.variables || [],
+        createdDate: new Date().toISOString(),
+        useCount: 0,
+        ...metadata
+      };
+
+      const frontmatter = this.createTemplateFrontmatter(fullMetadata);
+      const fullContent = `${frontmatter}\n\n${content}`;
+      
+      await fs.writeFile(templatePath, fullContent, 'utf-8');
+      
+      return { success: true, path: path.relative(this.vaultPath, templatePath) };
+    } catch (error) {
+      return { success: false, error: `Failed to create template: ${error}` };
+    }
+  }
+
+  /**
+   * Get all available templates with detailed metadata
+   */
+  async getAvailableTemplates(): Promise<CustomTemplate[]> {
+    const templates: CustomTemplate[] = [];
+    const templatesPath = path.join(this.vaultPath, this.templatesFolder);
+
+    try {
+      const files = await this.scanForTemplates(templatesPath, '');
+      
+      for (const file of files) {
+        const fullPath = path.join(templatesPath, file);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        
+        const metadata = this.parseTemplateMetadata(content);
+        const bodyContent = this.extractTemplateBody(content);
+        
+        templates.push({
+          name: file.replace('.md', ''),
+          content: bodyContent,
+          metadata,
+          filePath: file
+        });
+      }
+    } catch (error) {
+      // Templates folder doesn't exist
+      return [];
+    }
+
+    return templates.sort((a, b) => b.metadata.useCount - a.metadata.useCount);
+  }
+
+  /**
+   * Apply template to existing note
+   */
+  async applyTemplateToNote(
+    templateName: string,
+    notePath: string,
+    variables?: TemplaterVariable[],
+    mode: 'replace' | 'prepend' | 'append' = 'replace'
+  ): Promise<{ success: boolean; error?: string }> {
+    const template = await this.getTemplate(templateName);
+    
+    if (!template) {
+      return { success: false, error: `Template not found: ${templateName}` };
+    }
+
+    const fullPath = path.join(this.vaultPath, notePath);
+    
+    try {
+      // Add file-specific variables
+      const fileVars: TemplaterVariable[] = [
+        { name: 'title', value: path.basename(notePath, '.md') },
+        { name: 'folder', value: path.dirname(notePath) },
+        ...(variables || [])
+      ];
+
+      const processedContent = this.processTemplate(template, fileVars);
+      
+      if (mode === 'replace') {
+        await fs.writeFile(fullPath, processedContent, 'utf-8');
+      } else {
+        const existingContent = await fs.readFile(fullPath, 'utf-8');
+        const newContent = mode === 'prepend' 
+          ? `${processedContent}\n\n${existingContent}`
+          : `${existingContent}\n\n${processedContent}`;
+        await fs.writeFile(fullPath, newContent, 'utf-8');
+      }
+      
+      // Update template usage
+      await this.updateTemplateUsage(templateName);
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: `Failed to apply template: ${error}` };
+    }
+  }
+
+  /**
+   * Generate default template suggestions
+   */
+  generateTemplateProposals(): {
+    dailyNote: string;
+    weeklyNote: string;
+    meetingNote: string;
+    projectNote: string;
+    taskNote: string;
+  } {
+    return {
+      dailyNote: `---
+description: Daily note template
+category: daily
+variables:
+  - name: date
+    value: "{{date:YYYY-MM-DD}}"
+---
+
+# {{date:YYYY-MM-DD dddd}}
+
+## 📅 Today's Plan
+- [ ] 
+
+## 🎯 Priority Tasks
+1. 
+2. 
+3. 
+
+## 📝 Notes
+
+
+## 🌟 Today's Wins
+
+
+## 🔄 Tomorrow's Focus
+
+
+---
+Created: {{date:YYYY-MM-DD HH:mm}}`,
+
+      weeklyNote: `---
+description: Weekly review and planning template
+category: weekly
+variables:
+  - name: week_start
+    value: "{{date:YYYY-MM-DD}}"
+---
+
+# Week of {{date:YYYY-MM-DD}}
+
+## 📊 Last Week Review
+
+### ✅ Completed
+- 
+
+### ⏸️ In Progress
+- 
+
+### ❌ Not Started
+- 
+
+## 🎯 This Week's Goals
+
+### 🔥 High Priority
+1. 
+2. 
+3. 
+
+### 📝 Other Tasks
+- 
+
+## 📈 Metrics & Insights
+
+
+## 🧠 Learnings & Notes
+
+
+---
+Created: {{date:YYYY-MM-DD HH:mm}}`,
+
+      meetingNote: `---
+description: Meeting notes template
+category: meeting
+variables:
+  - name: meeting_title
+    value: "Meeting Title"
+  - name: attendees
+    value: "Attendee Names"
+---
+
+# {{meeting_title}}
+
+**Date:** {{date:YYYY-MM-DD}}  
+**Time:** {{time}}  
+**Attendees:** {{attendees}}
+
+## 📋 Agenda
+1. 
+2. 
+3. 
+
+## 📝 Discussion Notes
+
+### Topic 1
+
+
+### Topic 2
+
+
+## ✅ Action Items
+- [ ] **Person:** Task description - Due: 
+- [ ] **Person:** Task description - Due: 
+
+## 🔗 Related Links
+
+
+## 📎 Attachments
+
+
+---
+Next Meeting: 
+Created: {{date:YYYY-MM-DD HH:mm}}`,
+
+      projectNote: `---
+description: Project planning template
+category: project
+variables:
+  - name: project_name
+    value: "Project Name"
+  - name: project_owner
+    value: "Project Owner"
+---
+
+# 📋 {{project_name}}
+
+**Owner:** {{project_owner}}  
+**Start Date:** {{date:YYYY-MM-DD}}  
+**Status:** 🟡 Planning
+
+## 🎯 Project Overview
+
+### Objective
+
+
+### Success Criteria
+- 
+- 
+- 
+
+## 📊 Project Details
+
+**Timeline:**  
+**Budget:**  
+**Team:**  
+
+## 📋 Tasks
+
+### 🔥 Phase 1: Planning
+- [ ] 
+- [ ] 
+- [ ] 
+
+### 🚀 Phase 2: Execution
+- [ ] 
+- [ ] 
+- [ ] 
+
+### ✅ Phase 3: Completion
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 🎯 Milestones
+| Date | Milestone | Status |
+|------|-----------|--------|
+| {{date:YYYY-MM-DD}} | Project Start | ⏳ |
+|  |  |  |
+|  |  |  |
+
+## 📝 Notes & Updates
+
+
+## 🔗 Related Resources
+
+
+---
+Created: {{date:YYYY-MM-DD HH:mm}}`,
+
+      taskNote: `---
+description: Task note template for TaskNotes integration
+category: task
+variables:
+  - name: task_title
+    value: "Task Title"
+status: todo
+priority: medium
+---
+
+# {{task_title}}
+
+**Created:** {{date:YYYY-MM-DD}}  
+**Priority:** Medium  
+**Status:** Todo  
+
+## 📝 Description
+
+
+## ✅ Acceptance Criteria
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 📋 Subtasks
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 🔗 Related
+- 
+
+## 📎 Resources
+- 
+
+## 📝 Progress Notes
+
+
+---
+Created: {{date:YYYY-MM-DD HH:mm}}`
+    };
+  }
+
+  // Private helper methods for template management
+
+  private createTemplateFrontmatter(metadata: TemplateMetadata): string {
+    const lines = ['---'];
+    lines.push(`description: "${metadata.description}"`);
+    lines.push(`category: ${metadata.category}`);
+    lines.push(`created: ${metadata.createdDate}`);
+    lines.push(`useCount: ${metadata.useCount}`);
+    
+    if (metadata.lastUsed) {
+      lines.push(`lastUsed: ${metadata.lastUsed}`);
+    }
+    
+    if (metadata.variables.length > 0) {
+      lines.push('variables:');
+      metadata.variables.forEach(variable => {
+        lines.push(`  - name: ${variable.name}`);
+        lines.push(`    value: "${variable.value}"`);
+      });
+    }
+    
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  private parseTemplateMetadata(content: string): TemplateMetadata {
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    
+    if (!frontmatterMatch) {
+      return {
+        name: 'Unknown Template',
+        description: '',
+        category: 'uncategorized',
+        variables: [],
+        createdDate: new Date().toISOString(),
+        useCount: 0
+      };
+    }
+
+    const yamlContent = frontmatterMatch[1];
+    const metadata: Partial<TemplateMetadata> = {
+      variables: []
+    };
+    
+    // Simple YAML parsing
+    yamlContent.split('\n').forEach(line => {
+      const match = line.match(/^(\w+):\s*(.+)$/);
+      if (match) {
+        const [, key, value] = match;
+        switch (key) {
+          case 'description':
+            metadata.description = value.replace(/['"]/g, '');
+            break;
+          case 'category':
+            metadata.category = value;
+            break;
+          case 'created':
+            metadata.createdDate = value;
+            break;
+          case 'useCount':
+            metadata.useCount = parseInt(value) || 0;
+            break;
+          case 'lastUsed':
+            metadata.lastUsed = value;
+            break;
+        }
+      }
+    });
+
+    return {
+      name: metadata.name || 'Unknown Template',
+      description: metadata.description || '',
+      category: metadata.category || 'uncategorized',
+      variables: metadata.variables || [],
+      createdDate: metadata.createdDate || new Date().toISOString(),
+      useCount: metadata.useCount || 0,
+      lastUsed: metadata.lastUsed
+    };
+  }
+
+  private extractTemplateBody(content: string): string {
+    const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
+    return content.replace(frontmatterRegex, '').trim();
+  }
+
+  private async updateTemplateUsage(templateName: string): Promise<void> {
+    try {
+      const templatePath = path.join(
+        this.vaultPath,
+        this.templatesFolder,
+        templateName.endsWith('.md') ? templateName : `${templateName}.md`
+      );
+      
+      const content = await fs.readFile(templatePath, 'utf-8');
+      const frontmatterMatch = content.match(/^(---\n[\s\S]*?\n---\n)([\s\S]*)$/);
+      
+      if (frontmatterMatch) {
+        let frontmatter = frontmatterMatch[1];
+        const body = frontmatterMatch[2];
+        
+        // Update useCount and lastUsed
+        const now = new Date().toISOString();
+        frontmatter = frontmatter.replace(/useCount:\s*(\d+)/, (match, count) => {
+          return `useCount: ${parseInt(count) + 1}`;
+        });
+        
+        if (frontmatter.includes('lastUsed:')) {
+          frontmatter = frontmatter.replace(/lastUsed:.*/, `lastUsed: ${now}`);
+        } else {
+          frontmatter = frontmatter.replace('---', `lastUsed: ${now}\n---`);
+        }
+        
+        await fs.writeFile(templatePath, frontmatter + body, 'utf-8');
+      }
+    } catch (error) {
+      // Ignore errors in usage tracking
     }
   }
 }
