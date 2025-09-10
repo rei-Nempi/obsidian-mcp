@@ -240,12 +240,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 このプロジェクトはMITライセンスの下でライセンスされています - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
-
-## Acknowledgments / 謝辞
-
-- Built for [Claude Desktop](https://claude.ai/desktop) using the [Model Context Protocol](https://github.com/anthropics/model-context-protocol)
-- Designed for [Obsidian](https://obsidian.md/) users
-- [Claude Desktop](https://claude.ai/desktop)用に[Model Context Protocol](https://github.com/anthropics/model-context-protocol)を使用して構築
-- [Obsidian](https://obsidian.md/)ユーザー向けに設計
-
-## Support / サポート
