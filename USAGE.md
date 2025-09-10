@@ -1,7 +1,7 @@
 # ObsidianMCP Usage Guide / 使用方法ガイド
 
-Complete usage instructions for all 53+ functions available in ObsidianMCP.  
-ObsidianMCPで利用可能な53以上の機能の完全使用方法。
+Complete usage instructions for all 61+ functions available in ObsidianMCP.  
+ObsidianMCPで利用可能な61以上の機能の完全使用方法。
 
 **You can use these commands in either English or Japanese - both languages work identically!**  
 **これらのコマンドは英語でも日本語でも使用可能です - どちらの言語でも同じように動作します！**
@@ -17,6 +17,7 @@ ObsidianMCPで利用可能な53以上の機能の完全使用方法。
 - [Book Search / 書籍検索 (14 functions)](#book-search--書籍検索-14-functions)
 - [Daily Notes / デイリーノート (1 function)](#daily-notes--デイリーノート-1-function)
 - [Advanced Search / 高度検索 (2 functions)](#advanced-search--高度検索-2-functions)
+- [User Confirmation System / ユーザー確認システム](#user-confirmation-system--ユーザー確認システム)
 
 ## First Time Setup / 初回セットアップ
 
@@ -54,12 +55,40 @@ Select a specific vault to work with.
 ### Note Management / ノート管理
 
 #### Create Notes / ノート作成
+
+**Basic Note Creation / 基本的なノート作成**
 ```
 "Create a new note called 'Project Planning' in the Work folder"
 "Write a note about machine learning in the Studies folder with tags #AI #learning"
 "Workフォルダに「プロジェクト計画」というノートを作成して"
 "Studiesフォルダに機械学習についてのノートを#AI #learningタグ付きで書いて"
 ```
+
+**Smart Title Handling / スマートタイトル処理**
+```
+"Create a note with content starting with '# Meeting Notes for Q4 Planning'"
+"Create a note without specifying a title - let it extract from the content"
+"「# Q4計画のミーティングノート」で始まる内容でノートを作成して"
+"タイトルを指定せずにノートを作成 - 内容からタイトルを抽出させて"
+```
+
+**Template-based Creation / テンプレートベース作成**
+```
+"Create a note from the 'Meeting' template"
+"Create a note using project template without specifying a title"
+"「会議」テンプレートからノートを作成して"
+"タイトルを指定せずにプロジェクトテンプレートからノートを作成して"
+```
+
+**Notes:** 
+- **If no title is specified, the system will automatically extract titles from H1 headings (# Title) in the content**
+- **If no H1 heading is found, a timestamp-based title will be generated automatically**
+- **All note creation operations require user confirmation with detailed folder and file status information**
+
+**注意事項:**
+- **タイトルが指定されていない場合、システムは自動的に内容のH1見出し（# タイトル）からタイトルを抽出します**
+- **H1見出しが見つからない場合、タイムスタンプベースのタイトルが自動生成されます**
+- **すべてのノート作成操作は、詳細なフォルダとファイル状態情報付きでユーザー確認が必要です**
 
 #### Read Notes / ノート読取
 ```
@@ -83,7 +112,25 @@ Select a specific vault to work with.
 ```
 "Move the note 'Old Project' to the Archive folder"
 "Rename 'Draft' to 'Final Report' and update all links"
+"「古いプロジェクト」ノートをArchiveフォルダに移動して"
+"「下書き」を「最終レポート」にリネームしてリンクを更新して"
 ```
+
+#### Delete Notes / ノート削除
+```
+"Delete the note 'Temporary Draft' after confirmation"
+"Remove the old meeting notes from last year"
+"確認後に「一時的な下書き」ノートを削除して"
+"昨年の古い会議ノートを削除して"
+```
+
+**Notes:**
+- **All deletion operations require user confirmation with detailed file information**
+- **The system will show the full path and warn about any potential impact before deletion**
+
+**注意事項:**
+- **すべての削除操作は詳細なファイル情報付きでユーザー確認が必要です**
+- **システムは削除前に完全パスを表示し、潜在的な影響について警告します**
 
 ### Search and Discovery / 検索と発見
 
@@ -157,13 +204,26 @@ Select a specific vault to work with.
 "List all available templates in my vault"
 "Create a new meeting template with date, attendees, and action items"
 "Build a project template with Templater variables"
+"利用可能なテンプレートを一覧表示して"
+"日付、参加者、アクションアイテム付きの会議テンプレートを作成して"
+"Templater変数付きプロジェクトテンプレートを構築して"
 ```
 
-### Apply Templates / テンプレート適用
+### Apply Templates with Smart Title Handling / スマートタイトル処理付きテンプレート適用
 ```
-"Create a note from my 'Meeting' template"
+"Create a note from my 'Meeting' template without specifying a title"
 "Apply the 'Daily Note' template to create today's note"
+"Use the project template and let the system generate a title automatically"
+"タイトルを指定せずに「会議」テンプレートからノートを作成して"
+"「デイリーノート」テンプレートを適用して今日のノートを作成して"
+"プロジェクトテンプレートを使用してシステムに自動でタイトルを生成させて"
 ```
+
+**Template Creation Features / テンプレート作成機能:**
+- **Smart title extraction from template content / テンプレート内容からのスマートタイトル抽出**
+- **Automatic timestamp-based naming / 自動タイムスタンプベース命名**
+- **Mandatory user confirmation with folder status / フォルダ状態付き必須ユーザー確認**
+- **Template variable processing / テンプレート変数処理**
 
 ## Task Notes / タスクノート (6 functions)
 
@@ -269,9 +329,105 @@ Tags: #project #active
 3. **Regular maintenance with analytics** / 分析を使った定期メンテナンス
 4. **Create templates for recurring note types** / 定期的なノートタイプのテンプレートを作成
 
+## User Confirmation System / ユーザー確認システム
+
+### Overview / 概要
+
+All note creation and deletion operations now require mandatory user confirmation to prevent accidental operations and provide detailed information about the operation.
+
+すべてのノート作成・削除操作で、誤操作防止と操作詳細情報提供のため必須ユーザー確認が実装されています。
+
+### Confirmation Features / 確認機能
+
+#### Note Creation Confirmation / ノート作成確認
+```
+📝 ノート作成の確認
+
+**作成するノート:**
+- タイトル: 会議ノート-2024-01-15T10-30-00
+- 相対パス: meetings/会議ノート-2024-01-15T10-30-00.md
+- 絶対パス: /Users/username/vault/meetings/会議ノート-2024-01-15T10-30-00.md
+
+**保存先フォルダ詳細:**
+- フォルダ: meetings
+- 状態: ✅ 既存フォルダ
+
+**ファイル状態:**
+- 🆕 新規ファイル
+
+✅ **作成する**: create_note(title: "会議ノート-2024-01-15T10-30-00", confirm: true)
+❌ **キャンセル**: 操作をキャンセルします
+```
+
+#### Template Creation Confirmation / テンプレート作成確認
+```
+📝 テンプレートからノート作成の確認
+
+**作成するノート:**
+- テンプレート: Meeting
+- タイトル: 新規ノート-2024-01-15T10-30-00
+- 相対パス: meetings/新規ノート-2024-01-15T10-30-00.md
+
+**保存先フォルダ詳細:**
+- フォルダ: meetings
+- 状態: 🆕 新規フォルダ（作成されます）
+
+**ファイル状態:**
+- ⚠️ **既存ファイルを上書きします**
+
+✅ **作成する**: create_from_template(template_name: "Meeting", title: "新規ノート-2024-01-15T10-30-00", confirm: true)
+```
+
+#### Deletion Confirmation / 削除確認
+```
+🗑️ ノート削除の確認
+
+**削除するノート:**
+- タイトル: 古いメモ
+- パス: /Users/username/vault/archive/古いメモ.md
+
+**警告:**
+- この操作は元に戻せません
+- ファイルは完全に削除されます
+
+✅ **削除する**: delete_note(file_path: "archive/古いメモ.md", confirm: true)
+❌ **キャンセル**: 操作をキャンセルします
+```
+
+### Smart Title Handling / スマートタイトル処理
+
+#### Automatic Title Extraction / 自動タイトル抽出
+When no title is specified, the system:
+1. **Extracts from H1 headings** - Searches for `# Title` in the content
+2. **Generates timestamp-based titles** - Creates `新規ノート-YYYY-MM-DDTHH-mm-ss` format
+3. **Displays final title in confirmation** - Shows what title will be used
+
+タイトルが指定されていない場合、システムは:
+1. **H1見出しから抽出** - 内容の `# タイトル` を検索
+2. **タイムスタンプベースタイトル生成** - `新規ノート-YYYY-MM-DDTHH-mm-ss` 形式で作成
+3. **確認画面で最終タイトル表示** - 使用されるタイトルを表示
+
+#### Status Indicators / ステータス表示
+
+| Icon | Status | Meaning / 意味 |
+|------|--------|-------------|
+| ✅ | 既存フォルダ | Folder exists / フォルダ存在 |
+| 🆕 | 新規フォルダ（作成されます） | New folder will be created / 新フォルダ作成 |
+| 📁 | ルートフォルダ | Root folder / ルートフォルダ |
+| 🆕 | 新規ファイル | New file / 新ファイル |
+| ⚠️ | **既存ファイルを上書きします** | Will overwrite existing file / 既存ファイル上書き |
+
+### Best Practices / ベストプラクティス
+
+1. **Always review confirmation details** / 確認詳細を必ず確認
+2. **Check folder paths before confirming** / 確認前にフォルダパスをチェック
+3. **Be cautious with overwrite warnings** / 上書き警告に注意
+4. **Use descriptive titles or let system extract from H1** / 説明的なタイトルを使用するかH1から抽出させる
+
 ## Troubleshooting / トラブルシューティング
 
 ### Common Issues / よくある問題
 - **Vault not found** / 保管庫が見つからない: Check .obsidian folder exists / .obsidianフォルダの存在確認
 - **Template issues** / テンプレート問題: Ensure Templater plugin is enabled / Templaterプラグインの有効化確認
 - **Search problems** / 検索問題: Verify file permissions and extensions / ファイル権限と拡張子の確認
+- **Confirmation not showing** / 確認が表示されない: Ensure `confirm: true` parameter is used / `confirm: true` パラメータの使用確認

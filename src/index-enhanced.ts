@@ -12,7 +12,8 @@ import * as os from 'os';
 // import * as crypto from 'crypto'; // Reserved for future use
 import { TemplaterPlugin, TemplaterVariable } from './plugins/templater';
 import { BookSearchPlugin, BookMetadata } from './plugins/book-search';
-import { TaskNotesPlugin, TaskMetadata } from './plugins/tasknotes';
+import { TasksPlugin, TaskMetadata, TaskFilters } from './plugins/tasks';
+import { KanbanPlugin, KanbanBoard, KanbanCard, CardCreateData } from './plugins/kanban';
 import { VaultAnalyticsPlugin } from './plugins/vault-analytics';
 import { AIAnalysisPlugin } from './plugins/ai-analysis';
 
@@ -36,7 +37,8 @@ let selectedVault: string | null = null;
 // Plugin instances
 let templaterPlugin: TemplaterPlugin | null = null;
 let bookSearchPlugin: BookSearchPlugin | null = null;
-let taskNotesPlugin: TaskNotesPlugin | null = null;
+let tasksPlugin: TasksPlugin | null = null;
+let kanbanPlugin: KanbanPlugin | null = null;
 let vaultAnalyticsPlugin: VaultAnalyticsPlugin | null = null;
 let aiAnalysisPlugin: AIAnalysisPlugin | null = null;
 
@@ -46,6 +48,36 @@ let lastBookSearchResults: BookMetadata[] = [];
 // File locks for concurrent editing detection (reserved for future use)
 // const fileLocks: Map<string, { timestamp: number; sessionId: string }> = new Map();
 // const sessionId = crypto.randomBytes(16).toString('hex');
+
+// Helper function to extract title from content
+function extractTitleFromContent(content: string): string | null {
+  if (!content) return null;
+  
+  // Look for H1 heading (# Title)
+  const h1Match = content.match(/^#\s+(.+)$/m);
+  if (h1Match) {
+    return h1Match[1].trim();
+  }
+  
+  // Look for the first non-empty line as potential title
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('---')) {
+      // Take first 50 characters as title
+      return trimmed.length > 50 ? trimmed.substring(0, 50) + '...' : trimmed;
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to generate default title
+function generateDefaultTitle(): string {
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
+  return `新規ノート-${timestamp}`;
+}
 
 // Helper function to update Obsidian links in content
 async function updateObsidianLinks(vaultPath: string, oldPath: string, newPath: string): Promise<number> {
@@ -176,8 +208,11 @@ async function initializePlugins(): Promise<void> {
   const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY;
   bookSearchPlugin = new BookSearchPlugin(googleApiKey);
   
-  // Initialize TaskNotes plugin
-  taskNotesPlugin = new TaskNotesPlugin(selectedVault);
+  // Initialize Tasks plugin
+  tasksPlugin = new TasksPlugin(selectedVault);
+  
+  // Initialize Kanban plugin
+  kanbanPlugin = new KanbanPlugin(selectedVault);
   
   // Initialize Vault Analytics plugin
   vaultAnalyticsPlugin = new VaultAnalyticsPlugin(selectedVault);
@@ -187,21 +222,7 @@ async function initializePlugins(): Promise<void> {
 }
 
 // Check if plugins are available
-async function checkPluginAvailability(): Promise<{ templater: boolean; bookSearch: boolean }> {
-  if (!selectedVault) {
-    return { templater: false, bookSearch: false };
-  }
-  
-  // Check for Templater templates folder
-  const templaterAvailable = await fs.access(path.join(selectedVault, 'Templates'))
-    .then(() => true)
-    .catch(() => false);
-  
-  // Book Search is always available (uses public APIs)
-  const bookSearchAvailable = true;
-  
-  return { templater: templaterAvailable, bookSearch: bookSearchAvailable };
-}
+// Function removed - plugin availability no longer checked proactively
 
 // Find all Obsidian vaults
 async function findVaults(): Promise<string[]> {
@@ -268,7 +289,6 @@ async function scanForVaults(dir: string, vaults: string[], depth: number, maxDe
 
 // Tool definitions
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  const pluginStatus = await checkPluginAvailability();
   
   const tools = [
     {
@@ -315,8 +335,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: 'object',
             description: 'Frontmatter metadata (tags, date, etc)',
           },
+          confirm: {
+            type: 'boolean',
+            description: 'Confirm note creation (required for actual creation)',
+            default: false,
+          },
         },
-        required: ['title', 'content'],
+        required: [],
       },
     },
     {
@@ -339,7 +364,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           confirm: {
             type: 'boolean',
-            description: 'Skip confirmation prompt',
+            description: 'Confirm note deletion (required for actual deletion)',
             default: false,
           },
           trash: {
@@ -599,230 +624,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       } as any,
     },
     {
-      name: 'create_task',
-      description: 'Create a new task with metadata and time tracking capabilities',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          title: {
-            type: 'string',
-            description: 'Task title',
-          },
-          content: {
-            type: 'string',
-            description: 'Task description/content',
-          },
-          status: {
-            type: 'string',
-            enum: ['todo', 'in-progress', 'waiting', 'done', 'cancelled'],
-            description: 'Task status',
-            default: 'todo',
-          },
-          priority: {
-            type: 'string',
-            enum: ['low', 'medium', 'high', 'urgent'],
-            description: 'Task priority',
-            default: 'medium',
-          },
-          due: {
-            type: 'string',
-            description: 'Due date (ISO format: YYYY-MM-DD)',
-          },
-          project: {
-            type: 'string',
-            description: 'Project name',
-          },
-          assignee: {
-            type: 'string',
-            description: 'Assignee name',
-          },
-          estimate: {
-            type: 'number',
-            description: 'Estimated time in minutes',
-          },
-          tags: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Task tags',
-          },
-          dependencies: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Dependent task titles or IDs',
-          },
-        },
-        required: ['title'],
-      } as any,
-    },
-    {
-      name: 'list_tasks',
-      description: 'List tasks with optional filtering',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          status: {
-            type: 'string',
-            enum: ['todo', 'in-progress', 'waiting', 'done', 'cancelled'],
-            description: 'Filter by status',
-          },
-          project: {
-            type: 'string',
-            description: 'Filter by project',
-          },
-          priority: {
-            type: 'string',
-            enum: ['low', 'medium', 'high', 'urgent'],
-            description: 'Filter by priority',
-          },
-          assignee: {
-            type: 'string',
-            description: 'Filter by assignee',
-          },
-          due_before: {
-            type: 'string',
-            description: 'Filter tasks due before date (ISO format)',
-          },
-          due_after: {
-            type: 'string',
-            description: 'Filter tasks due after date (ISO format)',
-          },
-        },
-      } as any,
-    },
-    {
-      name: 'read_task',
-      description: 'Read a specific task',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to task file (relative to vault)',
-          },
-        },
-        required: ['path'],
-      } as any,
-    },
-    {
-      name: 'update_task_status',
-      description: 'Update task status',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to task file',
-          },
-          status: {
-            type: 'string',
-            enum: ['todo', 'in-progress', 'waiting', 'done', 'cancelled'],
-            description: 'New status',
-          },
-        },
-        required: ['path', 'status'],
-      } as any,
-    },
-    {
-      name: 'update_task_metadata',
-      description: 'Update task metadata (title, priority, due date, etc.)',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to task file',
-          },
-          title: {
-            type: 'string',
-            description: 'New task title',
-          },
-          priority: {
-            type: 'string',
-            enum: ['low', 'medium', 'high', 'urgent'],
-            description: 'New priority',
-          },
-          due: {
-            type: 'string',
-            description: 'New due date (ISO format)',
-          },
-          project: {
-            type: 'string',
-            description: 'New project name',
-          },
-          assignee: {
-            type: 'string',
-            description: 'New assignee',
-          },
-          estimate: {
-            type: 'number',
-            description: 'New time estimate in minutes',
-          },
-          tags: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'New tags list',
-          },
-        },
-        required: ['path'],
-      } as any,
-    },
-    {
-      name: 'start_task_timer',
-      description: 'Start time tracking for a task',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to task file',
-          },
-          description: {
-            type: 'string',
-            description: 'Optional description for this work session',
-          },
-        },
-        required: ['path'],
-      } as any,
-    },
-    {
-      name: 'stop_task_timer',
-      description: 'Stop time tracking for a task',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'Path to task file',
-          },
-        },
-        required: ['path'],
-      } as any,
-    },
-    {
-      name: 'get_task_stats',
-      description: 'Get task statistics and analytics',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      } as any,
-    },
-    {
-      name: 'get_overdue_tasks',
-      description: 'Get list of overdue tasks',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      } as any,
-    },
-    {
-      name: 'get_tasks_by_project',
-      description: 'Get tasks grouped by project',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      } as any,
-    },
-    {
       name: 'analyze_vault_structure',
       description: 'Analyze vault folder structure and statistics',
       inputSchema: {
@@ -988,6 +789,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             description: 'Skip template selection prompt',
             default: false,
           },
+          confirm: {
+            type: 'boolean',
+            description: 'Confirm daily note creation (required for actual creation)',
+            default: false,
+          },
         },
       } as any,
     },
@@ -1084,9 +890,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
   ];
   
-  // Add Templater tools if available
-  if (pluginStatus.templater) {
-    tools.push(
+  // Add Templater tools
+  tools.push(
       {
         name: 'list_templates',
         description: 'List available Templater templates',
@@ -1124,8 +929,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
               },
             },
+            confirm: {
+              type: 'boolean',
+              description: 'Confirm note creation from template (required for actual creation)',
+              default: false,
+            },
           },
-          required: ['template_name', 'title'],
+          required: ['template_name'],
         } as any,
       },
       {
@@ -1154,11 +964,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         } as any,
       }
     );
-  }
   
-  // Add Book Search tools if available
-  if (pluginStatus.bookSearch) {
-    tools.push(
+  // Add Book Search tools
+  tools.push(
       {
         name: 'search_book_by_isbn',
         description: 'Search for a book by ISBN',
@@ -1233,7 +1041,361 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         } as any,
       }
     );
-  }
+
+  // Add Tasks plugin tools
+  tools.push(
+    {
+      name: 'create_task',
+      description: 'Create a new task with Obsidian Tasks plugin format',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          description: {
+            type: 'string',
+            description: 'Task description',
+          },
+          status: {
+            type: 'string',
+            enum: ['incomplete', 'complete', 'cancelled', 'in-progress', 'waiting', 'scheduled'],
+            description: 'Task status',
+            default: 'incomplete',
+          },
+          priority: {
+            type: 'string',
+            enum: ['highest', 'high', 'medium', 'low', 'lowest'],
+            description: 'Task priority',
+          },
+          dueDate: {
+            type: 'string',
+            description: 'Due date (YYYY-MM-DD format)',
+          },
+          scheduledDate: {
+            type: 'string',
+            description: 'Scheduled date (YYYY-MM-DD format)',
+          },
+          startDate: {
+            type: 'string',
+            description: 'Start date (YYYY-MM-DD format)',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Task tags',
+          },
+          project: {
+            type: 'string',
+            description: 'Project name',
+          },
+          filePath: {
+            type: 'string',
+            description: 'File path to create the task in (defaults to Tasks.md)',
+          },
+        },
+        required: ['description'],
+      } as any,
+    },
+    {
+      name: 'list_tasks',
+      description: 'List tasks with optional filtering',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['incomplete', 'complete', 'cancelled', 'in-progress', 'waiting', 'scheduled'],
+            },
+            description: 'Filter by task status',
+          },
+          priority: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['highest', 'high', 'medium', 'low', 'lowest'],
+            },
+            description: 'Filter by priority',
+          },
+          hasScheduledDate: {
+            type: 'boolean',
+            description: 'Filter tasks with/without scheduled date',
+          },
+          hasDueDate: {
+            type: 'boolean',
+            description: 'Filter tasks with/without due date',
+          },
+          project: {
+            type: 'string',
+            description: 'Filter by project',
+          },
+          tag: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Filter by tags',
+          },
+          path: {
+            type: 'string',
+            description: 'Filter by file path',
+          },
+          dueAfter: {
+            type: 'string',
+            description: 'Filter tasks due after date (YYYY-MM-DD)',
+          },
+          dueBefore: {
+            type: 'string',
+            description: 'Filter tasks due before date (YYYY-MM-DD)',
+          },
+        },
+      } as any,
+    },
+    {
+      name: 'update_task_status',
+      description: 'Update a task status by file path and line number',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          filePath: {
+            type: 'string',
+            description: 'File path containing the task',
+          },
+          lineNumber: {
+            type: 'number',
+            description: 'Line number of the task (0-based)',
+          },
+          newStatus: {
+            type: 'string',
+            enum: ['incomplete', 'complete', 'cancelled', 'in-progress', 'waiting', 'scheduled'],
+            description: 'New task status',
+          },
+        },
+        required: ['filePath', 'lineNumber', 'newStatus'],
+      } as any,
+    },
+    {
+      name: 'get_task_stats',
+      description: 'Get task statistics and analytics',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      } as any,
+    },
+    {
+      name: 'get_overdue_tasks',
+      description: 'Get list of overdue tasks',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      } as any,
+    },
+    {
+      name: 'get_tasks_by_project',
+      description: 'Get tasks grouped by project',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      } as any,
+    }
+  );
+
+  // Add Kanban plugin tools
+  tools.push(
+    {
+      name: 'create_kanban_board',
+      description: 'Create a new Kanban board with specified lanes',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardName: {
+            type: 'string',
+            description: 'Name of the Kanban board',
+          },
+          laneNames: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names of the lanes/columns',
+            default: ['To Do', 'Doing', 'Done'],
+          },
+          filePath: {
+            type: 'string',
+            description: 'Optional file path for the board (defaults to boardName.md)',
+          },
+        },
+        required: ['boardName'],
+      } as any,
+    },
+    {
+      name: 'add_kanban_card',
+      description: 'Add a card to a Kanban board lane',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+          laneTitle: {
+            type: 'string',
+            description: 'Title of the lane to add the card to',
+          },
+          title: {
+            type: 'string',
+            description: 'Card title',
+          },
+          content: {
+            type: 'string',
+            description: 'Card content/description',
+          },
+          assignee: {
+            type: 'string',
+            description: 'Card assignee',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Card tags',
+          },
+          dueDate: {
+            type: 'string',
+            description: 'Due date (YYYY-MM-DD format)',
+          },
+          checkItems: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Checklist items',
+          },
+        },
+        required: ['boardPath', 'laneTitle', 'title'],
+      } as any,
+    },
+    {
+      name: 'move_kanban_card',
+      description: 'Move a card between lanes in a Kanban board',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+          cardId: {
+            type: 'string',
+            description: 'ID of the card to move',
+          },
+          targetLaneTitle: {
+            type: 'string',
+            description: 'Title of the target lane',
+          },
+          position: {
+            type: 'number',
+            description: 'Position in the target lane (0-based, optional)',
+          },
+        },
+        required: ['boardPath', 'cardId', 'targetLaneTitle'],
+      } as any,
+    },
+    {
+      name: 'update_kanban_card',
+      description: 'Update a Kanban card properties',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+          cardId: {
+            type: 'string',
+            description: 'ID of the card to update',
+          },
+          title: {
+            type: 'string',
+            description: 'New card title',
+          },
+          content: {
+            type: 'string',
+            description: 'New card content',
+          },
+          assignee: {
+            type: 'string',
+            description: 'New assignee',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'New tags',
+          },
+          dueDate: {
+            type: 'string',
+            description: 'New due date (YYYY-MM-DD format)',
+          },
+          checkItems: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'New checklist items',
+          },
+        },
+        required: ['boardPath', 'cardId'],
+      } as any,
+    },
+    {
+      name: 'list_kanban_boards',
+      description: 'List all Kanban boards in the vault',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      } as any,
+    },
+    {
+      name: 'get_kanban_board',
+      description: 'Get detailed information about a specific Kanban board',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+        },
+        required: ['boardPath'],
+      } as any,
+    },
+    {
+      name: 'delete_kanban_card',
+      description: 'Delete a card from a Kanban board',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+          cardId: {
+            type: 'string',
+            description: 'ID of the card to delete',
+          },
+        },
+        required: ['boardPath', 'cardId'],
+      } as any,
+    },
+    {
+      name: 'archive_kanban_card',
+      description: 'Archive a card from a Kanban board',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          boardPath: {
+            type: 'string',
+            description: 'Path to the Kanban board file',
+          },
+          cardId: {
+            type: 'string',
+            description: 'ID of the card to archive',
+          },
+        },
+        required: ['boardPath', 'cardId'],
+      } as any,
+    }
+  );
   
   return { tools };
 });
@@ -1281,13 +1443,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         selectedVault = vault_path;
         await initializePlugins();
         
-        const pluginStatus = await checkPluginAvailability();
-        
         return {
           content: [
             {
               type: 'text',
-              text: `Vault selected: ${vault_path}\n\nVault name: ${path.basename(vault_path)}\n\nPlugins available:\n- Templater: ${pluginStatus.templater ? '✅' : '❌'}\n- Book Search: ${pluginStatus.bookSearch ? '✅' : '❌'}`,
+              text: `Vault selected: ${vault_path}\n\nVault name: ${path.basename(vault_path)}`,
             },
           ],
         };
@@ -1359,8 +1519,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       
-      const { template_name, title, folder = '', variables = [] } = args as any;
-      const notePath = path.join(folder, `${title}.md`);
+      const { template_name, title: inputTitle, folder = '', variables = [], confirm = false } = args as any;
+      
+      // Handle missing title - ask for title or generate default
+      let finalTitle = inputTitle;
+      if (!finalTitle) {
+        finalTitle = generateDefaultTitle();
+      }
+      
+      // User confirmation required for note creation from template
+      if (!confirm) {
+        const targetPath = path.join(folder, `${finalTitle}.md`);
+        const fullTargetPath = path.join(selectedVault, folder, `${finalTitle}.md`);
+        
+        // Check if folder exists
+        let folderStatus = '';
+        try {
+          const folderPath = path.join(selectedVault, folder);
+          if (folder) {
+            await fs.access(folderPath);
+            folderStatus = '✅ 既存フォルダ';
+          } else {
+            folderStatus = '📁 ルートフォルダ';
+          }
+        } catch {
+          folderStatus = '🆕 新規フォルダ（作成されます）';
+        }
+        
+        // Check if file already exists
+        let fileStatus = '';
+        try {
+          await fs.access(fullTargetPath);
+          fileStatus = '⚠️ **既存ファイルを上書きします**';
+        } catch {
+          fileStatus = '🆕 新規ファイル';
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📝 テンプレートからノート作成の確認\n\n**作成するノート:**\n- テンプレート: ${template_name}\n- タイトル: ${finalTitle}\n- 相対パス: ${targetPath}\n- 絶対パス: ${fullTargetPath}\n\n**保存先フォルダ詳細:**\n- フォルダ: ${folder || '（ルート）'}\n- 状態: ${folderStatus}\n\n**ファイル状態:**\n- ${fileStatus}\n\n**確認事項:**\n${!folder ? '- ルートフォルダに保存されます\n' : ''}${fileStatus.includes('上書き') ? '- 既存ファイルが上書きされます\n' : ''}${folderStatus.includes('新規') ? '- 新しいフォルダが作成されます\n' : ''}\n本当にこの場所にテンプレートからノートを作成しますか？\n\n✅ **作成する**: create_from_template(template_name: "${template_name}", title: "${finalTitle}", folder: "${folder}", confirm: true)\n❌ **キャンセル**: 操作をキャンセルします`,
+            },
+          ],
+        };
+      }
+      
+      const notePath = path.join(folder, `${finalTitle}.md`);
       
       const templaterVars: TemplaterVariable[] = variables.map((v: any) => ({
         name: v.name,
@@ -1765,7 +1970,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       
-      const { title, content, folder = '', metadata, force_create = false } = args as any;
+      const { title: inputTitle, content, folder = '', metadata, force_create = false, confirm = false } = args as any;
+      
+      // Handle missing title - ask for title or extract from content
+      let finalTitle = inputTitle;
+      if (!finalTitle) {
+        if (!content) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📝 ノートタイトルが必要です\n\nタイトルまたは内容のいずれかを指定してください：\n\n**オプション1: タイトルを指定**\ncreate_note(title: "ノートタイトル", content: "ノートの内容", folder: "${folder}")\n\n**オプション2: 内容から自動抽出**\ncreate_note(content: "# 見出し1をタイトルとして使用\\n\\n内容...", folder: "${folder}")\n\n**オプション3: 自動生成タイトル**\ncreate_note(title: "${generateDefaultTitle()}", content: "ノートの内容", folder: "${folder}")`,
+              },
+            ],
+          };
+        }
+        
+        // Try to extract title from content
+        const extractedTitle = extractTitleFromContent(content);
+        if (extractedTitle) {
+          finalTitle = extractedTitle;
+        } else {
+          // Use default generated title
+          finalTitle = generateDefaultTitle();
+        }
+      }
+      
+      // User confirmation required for note creation
+      if (!confirm) {
+        const targetPath = path.join(folder, `${finalTitle}.md`);
+        const fullTargetPath = path.join(selectedVault, folder, `${finalTitle}.md`);
+        
+        // Check if folder exists
+        let folderStatus = '';
+        try {
+          const folderPath = path.join(selectedVault, folder);
+          if (folder) {
+            await fs.access(folderPath);
+            folderStatus = '✅ 既存フォルダ';
+          } else {
+            folderStatus = '📁 ルートフォルダ';
+          }
+        } catch {
+          folderStatus = '🆕 新規フォルダ（作成されます）';
+        }
+        
+        // Check if file already exists
+        let fileStatus = '';
+        try {
+          await fs.access(fullTargetPath);
+          fileStatus = '⚠️ **既存ファイルを上書きします**';
+        } catch {
+          fileStatus = '🆕 新規ファイル';
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📝 ノート作成の確認\n\n**作成するノート:**\n- タイトル: ${finalTitle}${inputTitle ? '' : ' (自動生成/抽出)'}\n- 相対パス: ${targetPath}\n- 絶対パス: ${fullTargetPath}\n\n**保存先フォルダ詳細:**\n- フォルダ: ${folder || '（ルート）'}\n- 状態: ${folderStatus}\n\n**ファイル状態:**\n- ${fileStatus}\n\n**確認事項:**\n${!folder ? '- ルートフォルダに保存されます\n' : ''}${fileStatus.includes('上書き') ? '- 既存ファイルが上書きされます\n' : ''}${folderStatus.includes('新規') ? '- 新しいフォルダが作成されます\n' : ''}${!inputTitle ? '- タイトルが自動的に決定されました\n' : ''}\n本当にこの場所にノートを作成しますか？\n\n✅ **作成する**: create_note(title: "${finalTitle}", content: "${content || ''}", folder: "${folder}", confirm: true)\n❌ **キャンセル**: 操作をキャンセルします`,
+            },
+          ],
+        };
+      }
       
       // Check if templater is available and suggest templates
       if (!force_create && templaterPlugin) {
@@ -1777,7 +2044,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `利用可能なテンプレート：\n\n${templateList}\n\nテンプレートを使用しますか？\n- 使用する場合: create_from_template(template_name: "Daily Note", title: "${title}", folder: "${folder}")\n- 使用しない場合: create_note(title: "${title}", content: "${content || '内容を入力してください'}", folder: "${folder}", force_create: true)`,
+                text: `利用可能なテンプレート：\n\n${templateList}\n\nテンプレートを使用しますか？\n- 使用する場合: create_from_template(template_name: "Daily Note", title: "${finalTitle}", folder: "${folder}")\n- 使用しない場合: create_note(title: "${finalTitle}", content: "${content || '内容を入力してください'}", folder: "${folder}", force_create: true, confirm: true)`,
               },
             ],
           };
@@ -1795,7 +2062,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       
-      const notePath = path.join(selectedVault, folder, `${title}.md`);
+      const notePath = path.join(selectedVault, folder, `${finalTitle}.md`);
       
       // Create directory if needed
       const dir = path.dirname(notePath);
@@ -1840,17 +2107,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       // Determine the file path
       let targetPath: string;
+      let displayPath: string;
       if (notePath) {
         targetPath = path.join(selectedVault, notePath);
+        displayPath = notePath;
       } else if (title) {
         const fileName = title.endsWith('.md') ? title : `${title}.md`;
         targetPath = path.join(selectedVault, folder, fileName);
+        displayPath = path.join(folder, fileName);
       } else {
         return {
           content: [
             {
               type: 'text',
               text: 'Please provide either "path" or "title" to identify the note to delete.',
+            },
+          ],
+        };
+      }
+
+      // User confirmation required for note deletion
+      if (!confirm) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `🗑️ ノート削除の確認\n\n削除するノート:\n- パス: ${displayPath}\n- 削除方法: ${trash ? 'ゴミ箱に移動' : '完全削除'}\n\n⚠️ **警告**: この操作は取り消せません。\n\n本当にこのノートを削除しますか？\n\n✅ **削除する**: delete_note(${notePath ? `path: "${notePath}"` : `title: "${title}", folder: "${folder}"`}, confirm: true, trash: ${trash})\n❌ **キャンセル**: 操作をキャンセルします`,
             },
           ],
         };
@@ -2970,307 +3252,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'create_task': {
-      if (!selectedVault) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected. Please select a vault first using select_vault.',
-            },
-          ],
-        };
-      }
 
-      if (!taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'TaskNotes plugin not initialized.',
-            },
-          ],
-        };
-      }
 
-      try {
-        const metadata: Partial<TaskMetadata> = {
-          title: args?.title as string,
-          status: (args?.status as TaskMetadata['status']) || 'todo',
-          priority: (args?.priority as TaskMetadata['priority']) || 'medium',
-          due: args?.due as string,
-          project: args?.project as string,
-          assignee: args?.assignee as string,
-          estimate: args?.estimate as number,
-          tags: args?.tags as string[],
-          dependencies: args?.dependencies as string[],
-        };
 
-        const content = args?.content as string || '';
-        const task = await taskNotesPlugin.createTask(metadata, content);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `✅ タスクを作成しました:\n\n**${task.metadata.title}**\n- ステータス: ${task.metadata.status}\n- 優先度: ${task.metadata.priority}\n- ファイルパス: ${task.filePath}${task.metadata.due ? `\n- 期限: ${task.metadata.due}` : ''}${task.metadata.project ? `\n- プロジェクト: ${task.metadata.project}` : ''}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error creating task: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'list_tasks': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const filters = {
-          status: args?.status as string,
-          project: args?.project as string,
-          priority: args?.priority as string,
-          assignee: args?.assignee as string,
-          dueBefore: args?.due_before as string,
-          dueAfter: args?.due_after as string,
-        };
-
-        const tasks = await taskNotesPlugin.listTasks(filters);
-
-        if (tasks.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: '📝 該当するタスクが見つかりません。',
-              },
-            ],
-          };
-        }
-
-        const taskList = tasks.map(task => {
-          const statusIcon = {
-            'todo': '⭕',
-            'in-progress': '🔄',
-            'waiting': '⏳',
-            'done': '✅',
-            'cancelled': '❌'
-          }[task.metadata.status];
-
-          const priorityIcon = {
-            'low': '🔵',
-            'medium': '🟡',
-            'high': '🟠',
-            'urgent': '🔴'
-          }[task.metadata.priority];
-
-          const timeSpent = task.metadata.timeEntries?.reduce((total, entry) => total + (entry.duration || 0), 0) || 0;
-          
-          return `${statusIcon} **${task.metadata.title}** ${priorityIcon}\n  📁 ${task.filePath}${task.metadata.due ? `\n  📅 期限: ${task.metadata.due}` : ''}${task.metadata.project ? `\n  📋 プロジェクト: ${task.metadata.project}` : ''}${timeSpent > 0 ? `\n  ⏱️ 作業時間: ${timeSpent}分` : ''}`;
-        }).join('\n\n');
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `📝 タスク一覧 (${tasks.length}件):\n\n${taskList}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error listing tasks: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'read_task': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const taskPath = args?.path as string;
-        const task = await taskNotesPlugin.readTask(taskPath);
-
-        if (!task) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `タスクが見つかりません: ${taskPath}`,
-              },
-            ],
-          };
-        }
-
-        const statusIcon = {
-          'todo': '⭕',
-          'in-progress': '🔄',
-          'waiting': '⏳',
-          'done': '✅',
-          'cancelled': '❌'
-        }[task.metadata.status];
-
-        const priorityIcon = {
-          'low': '🔵',
-          'medium': '🟡',
-          'high': '🟠',
-          'urgent': '🔴'
-        }[task.metadata.priority];
-
-        const timeSpent = task.metadata.timeEntries?.reduce((total, entry) => total + (entry.duration || 0), 0) || 0;
-        const activeTimer = task.metadata.timeEntries?.find(entry => !entry.endTime);
-
-        let taskDetails = `# ${statusIcon} ${task.metadata.title} ${priorityIcon}\n\n`;
-        taskDetails += `**ステータス:** ${task.metadata.status}\n`;
-        taskDetails += `**優先度:** ${task.metadata.priority}\n`;
-        taskDetails += `**作成日:** ${task.metadata.created}\n`;
-        taskDetails += `**更新日:** ${task.metadata.updated}\n`;
-        
-        if (task.metadata.due) taskDetails += `**期限:** ${task.metadata.due}\n`;
-        if (task.metadata.project) taskDetails += `**プロジェクト:** ${task.metadata.project}\n`;
-        if (task.metadata.assignee) taskDetails += `**担当者:** ${task.metadata.assignee}\n`;
-        if (task.metadata.estimate) taskDetails += `**見積もり:** ${task.metadata.estimate}分\n`;
-        
-        if (timeSpent > 0) taskDetails += `**作業時間:** ${timeSpent}分\n`;
-        if (activeTimer) taskDetails += `**⏰ タイマー実行中** (開始: ${new Date(activeTimer.startTime).toLocaleString()})\n`;
-        
-        if (task.metadata.tags && task.metadata.tags.length > 0) {
-          taskDetails += `**タグ:** ${task.metadata.tags.join(', ')}\n`;
-        }
-        
-        if (task.metadata.dependencies && task.metadata.dependencies.length > 0) {
-          taskDetails += `**依存関係:** ${task.metadata.dependencies.join(', ')}\n`;
-        }
-
-        if (task.content) {
-          taskDetails += `\n## 詳細\n\n${task.content}`;
-        }
-
-        if (task.metadata.timeEntries && task.metadata.timeEntries.length > 0) {
-          taskDetails += `\n## 作業履歴\n\n`;
-          task.metadata.timeEntries.forEach((entry, index) => {
-            const start = new Date(entry.startTime).toLocaleString();
-            const end = entry.endTime ? new Date(entry.endTime).toLocaleString() : '実行中';
-            const duration = entry.duration ? `(${entry.duration}分)` : '';
-            taskDetails += `${index + 1}. ${start} - ${end} ${duration}${entry.description ? ` - ${entry.description}` : ''}\n`;
-          });
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: taskDetails,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error reading task: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'update_task_status': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const taskPath = args?.path as string;
-        const newStatus = args?.status as TaskMetadata['status'];
-        
-        const success = await taskNotesPlugin.updateTaskStatus(taskPath, newStatus);
-        
-        if (success) {
-          const statusIcon = {
-            'todo': '⭕',
-            'in-progress': '🔄',
-            'waiting': '⏳',
-            'done': '✅',
-            'cancelled': '❌'
-          }[newStatus];
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `${statusIcon} タスクステータスを更新しました: ${newStatus}\n📁 ${taskPath}`,
-              },
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `タスクステータスの更新に失敗しました: ${taskPath}`,
-              },
-            ],
-          };
-        }
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error updating task status: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'update_task_metadata': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3324,14 +3310,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'start_task_timer': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3373,14 +3352,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'stop_task_timer': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3424,14 +3396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'get_task_stats': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3493,14 +3458,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'get_overdue_tasks': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3551,14 +3509,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    case 'get_tasks_by_project': {
-      if (!selectedVault || !taskNotesPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or TaskNotes plugin not initialized.',
-            },
+    ,
           ],
         };
       }
@@ -3640,12 +3591,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      if (!taskNotesPlugin || !templaterPlugin) {
+      if (!templaterPlugin) {
         return {
           content: [
             {
               type: 'text',
-              text: 'TaskNotes or Templater plugin not available.',
+              text: 'Templater plugin not available.',
             },
           ],
         };
@@ -3656,8 +3607,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           date = new Date().toISOString().split('T')[0],
           template_name,
           use_template = true,
-          create_new_template = false
+          create_new_template = false,
+          confirm = false
         } = args as any;
+
+        // User confirmation required for daily note creation
+        if (!confirm) {
+          const dailyNotePath = `Daily Notes/${date}.md`;
+          const fullTargetPath = path.join(selectedVault, dailyNotePath);
+          const dailyNotesFolder = path.join(selectedVault, 'Daily Notes');
+          
+          // Check if Daily Notes folder exists
+          let folderStatus = '';
+          try {
+            await fs.access(dailyNotesFolder);
+            folderStatus = '✅ 既存フォルダ';
+          } catch {
+            folderStatus = '🆕 新規フォルダ（作成されます）';
+          }
+          
+          // Check if daily note already exists
+          let fileStatus = '';
+          try {
+            await fs.access(fullTargetPath);
+            fileStatus = '⚠️ **既存のデイリーノートを上書きします**';
+          } catch {
+            fileStatus = '🆕 新規デイリーノート';
+          }
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📅 デイリーノート作成の確認\n\n**作成するデイリーノート:**\n- 日付: ${date}\n- 相対パス: ${dailyNotePath}\n- 絶対パス: ${fullTargetPath}\n- テンプレート使用: ${use_template ? 'はい' : 'いいえ'}${template_name ? `\n- テンプレート: ${template_name}` : ''}\n\n**保存先フォルダ詳細:**\n- フォルダ: Daily Notes\n- 状態: ${folderStatus}\n\n**ファイル状態:**\n- ${fileStatus}\n\n**確認事項:**\n${fileStatus.includes('上書き') ? '- 既存のデイリーノートが上書きされます\n' : ''}${folderStatus.includes('新規') ? '- Daily Notesフォルダが新規作成されます\n' : ''}\n本当にこの場所にデイリーノートを作成しますか？\n\n✅ **作成する**: create_daily_note(date: "${date}"${template_name ? `, template_name: "${template_name}"` : ''}, confirm: true)\n❌ **キャンセル**: 操作をキャンセルします`,
+              },
+            ],
+          };
+        }
 
         // Template selection confirmation process
         let selectedTemplate = template_name;
@@ -4503,6 +4489,669 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Error validating broken links: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    // Tasks Plugin Tools
+    case 'create_task': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const taskData: Partial<TaskMetadata> = {
+          description: args?.description as string,
+          status: (args?.status as any) || 'incomplete',
+          priority: args?.priority as any,
+          dueDate: args?.dueDate as string,
+          scheduledDate: args?.scheduledDate as string,
+          startDate: args?.startDate as string,
+          tags: args?.tags as string[],
+          project: args?.project as string,
+        };
+
+        const filePath = args?.filePath as string;
+        const task = await tasksPlugin.createTask(taskData, filePath);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ タスクを作成しました:\n\n**${task.description}**\n- ステータス: ${task.status}\n- ファイル: ${task.filePath}${task.priority ? `\n- 優先度: ${task.priority}` : ''}${task.dueDate ? `\n- 期限: ${task.dueDate}` : ''}${task.project ? `\n- プロジェクト: ${task.project}` : ''}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error creating task: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'list_tasks': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const filters: TaskFilters = {
+          status: args?.status as any,
+          priority: args?.priority as any,
+          hasScheduledDate: args?.hasScheduledDate as boolean,
+          hasDueDate: args?.hasDueDate as boolean,
+          project: args?.project as string,
+          tag: args?.tag as string[],
+          path: args?.path as string,
+          dueAfter: args?.dueAfter as string,
+          dueBefore: args?.dueBefore as string,
+        };
+
+        const tasks = await tasksPlugin.listTasks(filters);
+
+        if (tasks.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'フィルター条件に一致するタスクが見つかりませんでした。',
+              },
+            ],
+          };
+        }
+
+        const taskList = tasks.map(task => 
+          `- [${task.status === 'complete' ? 'x' : task.status === 'cancelled' ? '-' : task.status === 'in-progress' ? '/' : ' '}] ${task.description}${task.priority ? ` (${task.priority})` : ''}${task.dueDate ? ` 📅 ${task.dueDate}` : ''}${task.tags && task.tags.length > 0 ? ` #${task.tags.join(' #')}` : ''}`
+        ).join('\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📋 見つかったタスク (${tasks.length}件):\n\n${taskList}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error listing tasks: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'update_task_status': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const filePath = args?.filePath as string;
+        const lineNumber = args?.lineNumber as number;
+        const newStatus = args?.newStatus as any;
+
+        const success = await tasksPlugin.updateTaskStatus(filePath, lineNumber, newStatus);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: success 
+                ? `✅ タスクのステータスを「${newStatus}」に更新しました。`
+                : 'タスクの更新に失敗しました。',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error updating task status: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_task_stats': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const stats = await tasksPlugin.getTaskStats();
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📊 タスク統計:\n\n` +
+                   `🔢 総タスク数: ${stats.total}\n` +
+                   `⏳ 未完了: ${stats.incomplete}\n` +
+                   `✅ 完了: ${stats.complete}\n` +
+                   `❌ キャンセル: ${stats.cancelled}\n` +
+                   `🔴 期限切れ: ${stats.overdue}\n` +
+                   `📅 今日期限: ${stats.dueToday}\n` +
+                   `📆 明日期限: ${stats.dueTomorrow}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error getting task stats: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_overdue_tasks': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const overdueTasks = await tasksPlugin.getOverdueTasks();
+
+        if (overdueTasks.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '🎉 期限切れのタスクはありません！',
+              },
+            ],
+          };
+        }
+
+        const taskList = overdueTasks.map(task => 
+          `- [ ] ${task.description} 📅 ${task.dueDate}${task.priority ? ` (${task.priority})` : ''}${task.tags && task.tags.length > 0 ? ` #${task.tags.join(' #')}` : ''}`
+        ).join('\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `🔴 期限切れのタスク (${overdueTasks.length}件):\n\n${taskList}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error getting overdue tasks: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_tasks_by_project': {
+      if (!selectedVault || !tasksPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Tasks plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const tasksByProject = await tasksPlugin.getTasksByProject();
+        const projectNames = Object.keys(tasksByProject);
+
+        if (projectNames.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'タスクが見つかりませんでした。',
+              },
+            ],
+          };
+        }
+
+        let result = '📁 プロジェクト別タスク:\n\n';
+        
+        projectNames.forEach(project => {
+          const tasks = tasksByProject[project];
+          result += `## ${project} (${tasks.length}件)\n`;
+          tasks.forEach(task => {
+            result += `- [${task.status === 'complete' ? 'x' : task.status === 'cancelled' ? '-' : task.status === 'in-progress' ? '/' : ' '}] ${task.description}${task.dueDate ? ` 📅 ${task.dueDate}` : ''}\n`;
+          });
+          result += '\n';
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.trim(),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error getting tasks by project: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    // Kanban Plugin Tools
+    case 'create_kanban_board': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardName = args?.boardName as string;
+        const laneNames = (args?.laneNames as string[]) || ['To Do', 'Doing', 'Done'];
+        const filePath = args?.filePath as string;
+
+        const boardPath = await kanbanPlugin.createKanbanBoard(boardName, laneNames, filePath);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `🎯 Kanbanボードを作成しました:\n\n**${boardName}**\n- ファイルパス: ${boardPath}\n- レーン数: ${laneNames.length}\n- レーン: ${laneNames.join(', ')}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error creating Kanban board: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'add_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const laneTitle = args?.laneTitle as string;
+        const cardData: CardCreateData = {
+          title: args?.title as string,
+          content: args?.content as string,
+          assignee: args?.assignee as string,
+          tags: args?.tags as string[],
+          dueDate: args?.dueDate as string,
+          checkItems: args?.checkItems as string[],
+        };
+
+        const card = await kanbanPlugin.addKanbanCard(boardPath, laneTitle, cardData);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📝 カードを追加しました:\n\n**${card.title}**\n- レーン: ${laneTitle}\n- ID: ${card.id}${card.assignee ? `\n- 担当者: ${card.assignee}` : ''}${card.dueDate ? `\n- 期限: ${card.dueDate}` : ''}${card.tags && card.tags.length > 0 ? `\n- タグ: ${card.tags.join(', ')}` : ''}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error adding Kanban card: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'move_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const cardId = args?.cardId as string;
+        const targetLaneTitle = args?.targetLaneTitle as string;
+        const position = args?.position as number;
+
+        const success = await kanbanPlugin.moveKanbanCard(boardPath, cardId, targetLaneTitle, position);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: success 
+                ? `🔄 カードを「${targetLaneTitle}」レーンに移動しました。`
+                : 'カードの移動に失敗しました。',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error moving Kanban card: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'update_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const cardId = args?.cardId as string;
+        const updates: Partial<CardCreateData> = {};
+        
+        if (args?.title !== undefined) updates.title = args.title as string;
+        if (args?.content !== undefined) updates.content = args.content as string;
+        if (args?.assignee !== undefined) updates.assignee = args.assignee as string;
+        if (args?.tags !== undefined) updates.tags = args.tags as string[];
+        if (args?.dueDate !== undefined) updates.dueDate = args.dueDate as string;
+        if (args?.checkItems !== undefined) updates.checkItems = args.checkItems as string[];
+
+        const success = await kanbanPlugin.updateKanbanCard(boardPath, cardId, updates);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: success 
+                ? '✅ カードを更新しました。'
+                : 'カードの更新に失敗しました。',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error updating Kanban card: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'list_kanban_boards': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boards = await kanbanPlugin.listKanbanBoards();
+
+        if (boards.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Kanbanボードが見つかりませんでした。',
+              },
+            ],
+          };
+        }
+
+        const boardList = boards.map(board => 
+          `- **${board.name}**\n  - パス: ${board.path}\n  - レーン数: ${board.laneCount}\n  - カード数: ${board.cardCount}`
+        ).join('\n\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `🎯 Kanbanボード一覧 (${boards.length}個):\n\n${boardList}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error listing Kanban boards: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_kanban_board': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const { board, name, stats } = await kanbanPlugin.getKanbanBoard(boardPath);
+
+        let result = `🎯 **${name}** Kanbanボード\n\n`;
+        result += `📊 **統計:**\n- 総カード数: ${stats.totalCards}\n- アーカイブ: ${stats.archivedCards}\n\n`;
+        result += `📋 **レーン別カード数:**\n`;
+        
+        Object.entries(stats.cardsByLane).forEach(([lane, count]) => {
+          result += `- ${lane}: ${count}枚\n`;
+        });
+
+        result += `\n🔄 **レーン詳細:**\n`;
+        board.lanes.forEach(lane => {
+          result += `\n## ${lane.title} (${lane.cards.length}枚)\n`;
+          if (lane.cards.length > 0) {
+            lane.cards.forEach(card => {
+              result += `- ${card.title}${card.assignee ? ` [@${card.assignee}]` : ''}${card.dueDate ? ` 📅${card.dueDate}` : ''}\n`;
+            });
+          } else {
+            result += `- (カードなし)\n`;
+          }
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error getting Kanban board: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'delete_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const cardId = args?.cardId as string;
+
+        const success = await kanbanPlugin.deleteKanbanCard(boardPath, cardId);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: success 
+                ? '🗑️ カードを削除しました。'
+                : 'カードの削除に失敗しました。',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error deleting Kanban card: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'archive_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
+          ],
+        };
+      }
+
+      try {
+        const boardPath = args?.boardPath as string;
+        const cardId = args?.cardId as string;
+
+        const success = await kanbanPlugin.archiveKanbanCard(boardPath, cardId);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: success 
+                ? '📦 カードをアーカイブしました。'
+                : 'カードのアーカイブに失敗しました。',
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error archiving Kanban card: ${error}`,
             },
           ],
         };

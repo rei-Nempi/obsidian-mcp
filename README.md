@@ -9,16 +9,18 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 
 ## Features / 機能
 
-**🎯 Complete Feature Set: 53+ Functions / 完全機能セット：53以上の機能**
+**🎯 Complete Feature Set: 61+ Functions / 完全機能セット：61以上の機能**
 
 ### 🏗️ Core Features / コア機能 (17 functions)
 
 - 🔍 **Automatic Vault Discovery** - Automatically finds all Obsidian vaults on your system
-- 📝 **Full Note Management** - Create, read, update, delete, move notes with frontmatter support
+- 📝 **Smart Note Management** - Create, read, update, delete, move notes with automatic title extraction and frontmatter support
+- 🎯 **Intelligent Title Handling** - Automatically extracts titles from H1 headings or generates timestamp-based titles when not specified
+- 🔐 **User Confirmation System** - Mandatory confirmation for all note creation and deletion operations with detailed folder status
 - 🔐 **File Locking & Link Updates** - Detects concurrent editing and updates links when moving files
 - 🏷️ **Tag Management** - Create, analyze, and manage tags across your vault
 - 🔎 **Full-Text Search** - Search content across all notes with regex support
-- 📁 **Folder Operations** - Create, move, delete folders with automatic link updates
+- 📁 **Folder Operations** - Create, move, delete folders with automatic link updates and path validation
 - 🔗 **Backlink Analysis** - Find notes that link to a specific note
 
 ### 📚 Book Search Plugin / 書籍検索プラグイン (14 functions)
@@ -36,12 +38,25 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 - 📁 **Custom Folder Support** - Save templates in user-specified folders
 - 🔄 **Template Processing** - Full Templater syntax processing with variables and functions
 
-### 📋 TaskNotes Plugin / タスクノートプラグイン (6 functions)
+### ✅ Tasks Plugin / タスクプラグイン (6 functions)
 
-- ✅ **Task Management** - Create and manage task notes with status tracking
-- 🎯 **Priority System** - Organize tasks by priority (high, medium, low)
-- 📅 **Date-based Tasks** - Find tasks by date ranges and deadlines
-- 🗂️ **Project Organization** - Group tasks by projects and contexts
+- 📝 **Task Creation** - Create tasks with Obsidian Tasks plugin format including priorities, dates, and tags
+- 📋 **Task Management** - List and filter tasks by status, priority, project, tags, and dates
+- 🔄 **Status Updates** - Update task status (complete, in-progress, cancelled, etc.)
+- 📊 **Task Analytics** - Get comprehensive task statistics and progress tracking
+- 🔴 **Overdue Detection** - Automatically find and list overdue tasks
+- 📁 **Project Organization** - Group and manage tasks by project
+
+### 🎯 Kanban Plugin / Kanbanプラグイン (8 functions)
+
+- 🎪 **Board Management** - Create and manage Kanban boards with customizable lanes
+- 📝 **Card Operations** - Add, update, move, and delete cards with rich metadata
+- 🔄 **Workflow Automation** - Move cards between lanes to track project progress
+- 👥 **Team Collaboration** - Assign cards to team members with due dates and tags
+- 📊 **Board Analytics** - Get comprehensive board statistics and lane-by-lane breakdowns
+- 📦 **Archive System** - Archive completed cards for historical tracking
+- 🔍 **Board Discovery** - List and search all Kanban boards across the vault
+- ✅ **Checklist Support** - Add checklist items to cards for detailed task breakdown
 
 ### 📊 Vault Analytics Plugin / 保管庫分析プラグイン (4 functions)
 
@@ -70,11 +85,13 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 ### 🏗️ コア機能 (17機能)
 
 - 🔍 **保管庫自動探索** - システム内のすべてのObsidian保管庫を自動検出
-- 📝 **完全なノート管理** - フロントマター対応でノートの作成・読取・更新・削除・移動
+- 📝 **スマートノート管理** - 自動タイトル抽出・フロントマター対応でノートの作成・読取・更新・削除・移動
+- 🎯 **インテリジェントタイトル処理** - H1見出しからの自動タイトル抽出、未指定時のタイムスタンプベースタイトル生成
+- 🔐 **ユーザー確認システム** - 詳細フォルダ状態表示付きノート作成・削除時の必須確認
 - 🔐 **ファイルロック・リンク更新** - 同時編集検出とファイル移動時のリンク自動更新
 - 🏷️ **タグ管理** - 保管庫全体のタグを作成・分析・管理
 - 🔎 **全文検索** - 正規表現対応の全ノート検索
-- 📁 **フォルダ操作** - リンク自動更新付きフォルダの作成・移動・削除
+- 📁 **フォルダ操作** - パス検証・リンク自動更新付きフォルダの作成・移動・削除
 - 🔗 **バックリンク分析** - 特定のノートにリンクしているノートを発見
 
 ### 📚 書籍検索プラグイン (14機能)
@@ -137,7 +154,8 @@ For full functionality, install these Obsidian community plugins:
 | Plugin Name     | GitHub URL                                             | Purpose / 用途                                                                                         |
 | --------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | **Templater**   | https://github.com/SilentVoid13/Templater              | Template processing with variables and JavaScript functions / 変数・JavaScript関数付きテンプレート処理 |
-| **TaskNotes**   | https://github.com/callumalpass/tasknotes              | Task management with notes and project organization / ノート・プロジェクト整理付きタスク管理           |
+| **Tasks**       | https://github.com/obsidian-tasks-group/obsidian-tasks | Task management with rich formatting and filtering / リッチフォーマット・フィルタリング付きタスク管理     |
+| **Kanban**      | https://github.com/mgmeyers/obsidian-kanban            | Markdown-backed Kanban boards for project management / マークダウンベースKanbanボード・プロジェクト管理  |
 | **Book Search** | https://github.com/anpigon/obsidian-book-search-plugin | Book search and reading note management / 書籍検索・読書ノート管理                                     |
 | **Dataview**    | https://github.com/blacksmithgu/obsidian-dataview      | Dynamic content queries and data visualization / 動的コンテンツクエリ・データ可視化                    |
 
@@ -255,6 +273,7 @@ Once configured, you can use natural language commands in Claude:
 ```
 "List all my Obsidian vaults"
 "Select my main vault and analyze its structure"
+"Create a new note with automatic title extraction from content"
 "Create a daily note with template selection"
 "Search for notes about 'project planning' from last week"
 "Find and fix any broken links in my vault"
@@ -269,20 +288,21 @@ Once configured, you can use natural language commands in Claude:
 
 ### Core Commands / コアコマンド (17 functions)
 
-| Command                          | Description                          | 説明                               |
-| -------------------------------- | ------------------------------------ | ---------------------------------- |
-| `list_vaults`                    | Find all Obsidian vaults             | すべてのObsidian保管庫を検索       |
-| `select_vault`                   | Choose which vault to work with      | 作業する保管庫を選択               |
-| `create_note` / `write_note`     | Create/update notes with frontmatter | フロントマター付きノート作成・更新 |
-| `read_note`                      | Read existing note content           | 既存ノート内容読取                 |
-| `move_note`                      | Move/rename notes with link updates  | リンク更新付きノート移動・リネーム |
-| `delete_note`                    | Delete notes safely                  | ノート安全削除                     |
-| `list_notes`                     | List notes with filtering            | フィルタリング付きノート一覧       |
-| `search_notes`                   | Search notes by content/regex        | 内容・正規表現でノート検索         |
-| `get_backlinks`                  | Find notes linking to target         | 対象にリンクするノート検索         |
-| `get_note_info`                  | Get note metadata and links          | ノートメタデータ・リンク取得       |
-| `list_tags` / `get_notes_by_tag` | Tag management and filtering         | タグ管理・フィルタリング           |
-| `create_folder` / `move_folder`  | Folder operations with link updates  | リンク更新付きフォルダ操作         |
+| Command                          | Description                                    | 説明                                     |
+| -------------------------------- | ---------------------------------------------- | ---------------------------------------- |
+| `list_vaults`                    | Find all Obsidian vaults                       | すべてのObsidian保管庫を検索             |
+| `select_vault`                   | Choose which vault to work with                | 作業する保管庫を選択                     |
+| `create_note` / `write_note`     | Create/update notes with smart title handling  | スマートタイトル処理付きノート作成・更新 |
+| `create_from_template`           | Create notes from templates with confirmation  | 確認機能付きテンプレートからノート作成   |
+| `read_note`                      | Read existing note content                     | 既存ノート内容読取                       |
+| `move_note`                      | Move/rename notes with link updates            | リンク更新付きノート移動・リネーム       |
+| `delete_note`                    | Delete notes safely with confirmation         | 確認機能付きノート安全削除               |
+| `list_notes`                     | List notes with filtering                      | フィルタリング付きノート一覧             |
+| `search_notes`                   | Search notes by content/regex                  | 内容・正規表現でノート検索               |
+| `get_backlinks`                  | Find notes linking to target                   | 対象にリンクするノート検索               |
+| `get_note_info`                  | Get note metadata and links                    | ノートメタデータ・リンク取得             |
+| `list_tags` / `get_notes_by_tag` | Tag management and filtering                   | タグ管理・フィルタリング                 |
+| `create_folder` / `move_folder`  | Folder operations with link updates            | リンク更新付きフォルダ操作               |
 
 ### Analytics & AI Commands / 分析・AIコマンド (9 functions)
 
