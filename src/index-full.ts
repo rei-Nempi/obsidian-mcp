@@ -383,7 +383,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['template_name', 'title'],
-        },
+        } as any,
       },
       {
         name: 'process_template',
@@ -408,7 +408,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['template'],
-        },
+        } as any,
       }
     );
   }
@@ -429,7 +429,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             create_note: {
               type: 'boolean',
               description: 'Create a note for the book',
-              default: false,
             },
             template: {
               type: 'string',
@@ -438,11 +437,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             folder: {
               type: 'string',
               description: 'Folder for the book note',
-              default: 'Books',
             },
           },
           required: ['isbn'],
-        },
+        } as any,
       },
       {
         name: 'search_book_by_title',
@@ -461,11 +459,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             max_results: {
               type: 'number',
               description: 'Maximum number of results',
-              default: 5,
             },
           },
           required: ['title'],
-        },
+        } as any,
       },
       {
         name: 'create_book_note',
@@ -488,10 +485,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             folder: {
               type: 'string',
               description: 'Folder for the note',
-              default: 'Books',
             },
           },
-        },
+        } as any,
       }
     );
   }

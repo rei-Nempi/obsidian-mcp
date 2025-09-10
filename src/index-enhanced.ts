@@ -16,6 +16,7 @@ import { TasksPlugin, TaskMetadata, TaskFilters } from './plugins/tasks';
 import { KanbanPlugin, KanbanBoard, KanbanCard, CardCreateData } from './plugins/kanban';
 import { VaultAnalyticsPlugin } from './plugins/vault-analytics';
 import { AIAnalysisPlugin } from './plugins/ai-analysis';
+import { DailyNotesPlugin } from './plugins/daily-notes';
 
 // Full MCP Server for Obsidian with all features including plugins
 const server = new Server(
@@ -41,6 +42,7 @@ let tasksPlugin: TasksPlugin | null = null;
 let kanbanPlugin: KanbanPlugin | null = null;
 let vaultAnalyticsPlugin: VaultAnalyticsPlugin | null = null;
 let aiAnalysisPlugin: AIAnalysisPlugin | null = null;
+let dailyNotesPlugin: DailyNotesPlugin | null = null;
 
 // Store last book search results for easy selection
 let lastBookSearchResults: BookMetadata[] = [];
@@ -206,7 +208,7 @@ async function initializePlugins(): Promise<void> {
   
   // Initialize Book Search plugin (with optional Google Books API key from env)
   const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY;
-  bookSearchPlugin = new BookSearchPlugin(googleApiKey);
+  bookSearchPlugin = new BookSearchPlugin(selectedVault, googleApiKey);
   
   // Initialize Tasks plugin
   tasksPlugin = new TasksPlugin(selectedVault);
@@ -219,6 +221,9 @@ async function initializePlugins(): Promise<void> {
   
   // Initialize AI Analysis plugin
   aiAnalysisPlugin = new AIAnalysisPlugin(selectedVault);
+  
+  // Initialize Daily Notes plugin
+  dailyNotesPlugin = new DailyNotesPlugin(selectedVault);
 }
 
 // Check if plugins are available
@@ -1036,6 +1041,195 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             folder: {
               type: 'string',
               description: 'Folder for the note',
+            },
+          },
+        } as any,
+      },
+      {
+        name: 'search_book_by_author',
+        description: 'Search for books by author name',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            author: {
+              type: 'string',
+              description: 'Author name to search for',
+            },
+          },
+          required: ['author'],
+        } as any,
+      },
+      {
+        name: 'search_book_by_genre',
+        description: 'Search for books by genre or category',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            genre: {
+              type: 'string',
+              description: 'Genre or category to search for',
+            },
+          },
+          required: ['genre'],
+        } as any,
+      },
+      {
+        name: 'get_book_recommendations',
+        description: 'Get book recommendations based on a seed book or author',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            seed_title: {
+              type: 'string',
+              description: 'Title of seed book for recommendations',
+            },
+            seed_author: {
+              type: 'string',
+              description: 'Author of seed book for recommendations',
+            },
+          },
+        } as any,
+      },
+      {
+        name: 'create_reading_list',
+        description: 'Create or get personal reading list',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        } as any,
+      },
+      {
+        name: 'add_book_to_reading_list',
+        description: 'Add a book to personal reading list',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            book_data: {
+              type: 'object',
+              description: 'Book metadata object',
+            },
+            option_number: {
+              type: 'number',
+              description: 'Option number from previous search (1-5)',
+            },
+            status: {
+              type: 'string',
+              enum: ['want-to-read', 'currently-reading', 'read'],
+              description: 'Reading status',
+              default: 'want-to-read',
+            },
+            priority: {
+              type: 'string',
+              enum: ['low', 'medium', 'high'],
+              description: 'Priority level',
+              default: 'medium',
+            },
+            reading_goal: {
+              type: 'string',
+              description: 'Personal reading goal or notes',
+            },
+          },
+        } as any,
+      },
+      {
+        name: 'mark_book_as_read',
+        description: 'Mark a book in reading list as read',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            book_id: {
+              type: 'string',
+              description: 'Book ID from reading list',
+            },
+            personal_rating: {
+              type: 'number',
+              description: 'Personal rating (1-5)',
+              minimum: 1,
+              maximum: 5,
+            },
+            personal_notes: {
+              type: 'string',
+              description: 'Personal notes about the book',
+            },
+          },
+          required: ['book_id'],
+        } as any,
+      },
+      {
+        name: 'get_reading_progress',
+        description: 'Get reading progress and statistics',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        } as any,
+      },
+      {
+        name: 'rate_book',
+        description: 'Rate a book in personal reading list',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            book_id: {
+              type: 'string',
+              description: 'Book ID from reading list',
+            },
+            rating: {
+              type: 'number',
+              description: 'Rating (1-5)',
+              minimum: 1,
+              maximum: 5,
+            },
+            notes: {
+              type: 'string',
+              description: 'Additional notes about the rating',
+            },
+          },
+          required: ['book_id', 'rating'],
+        } as any,
+      },
+      {
+        name: 'add_book_notes',
+        description: 'Add or update notes for a book in reading list',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            book_id: {
+              type: 'string',
+              description: 'Book ID from reading list',
+            },
+            notes: {
+              type: 'string',
+              description: 'Notes to add to the book',
+            },
+          },
+          required: ['book_id', 'notes'],
+        } as any,
+      },
+      {
+        name: 'search_personal_library',
+        description: 'Search through personal reading list',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query for title, author, notes, etc.',
+            },
+          },
+          required: ['query'],
+        } as any,
+      },
+      {
+        name: 'export_reading_data',
+        description: 'Export reading list and statistics',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            format: {
+              type: 'string',
+              enum: ['json', 'csv', 'markdown'],
+              description: 'Export format',
+              default: 'json',
             },
           },
         } as any,
@@ -1956,6 +2150,1821 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         ],
       };
+    }
+
+    case 'search_books_by_category': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { category, max_results = 10 } = args as any;
+      
+      try {
+        // Search for books in the specified category using title search (most APIs don't have dedicated category search)
+        const books = await bookSearchPlugin.searchByTitle(category);
+        
+        if (books.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📚 カテゴリ「${category}」の書籍が見つかりませんでした。\n\n別のカテゴリ名を試すか、より一般的な用語を使用してください。`,
+              },
+            ],
+          };
+        }
+        
+        const limitedBooks = books.slice(0, Math.min(max_results, 10));
+        lastBookSearchResults = limitedBooks;
+        
+        let result = `📚 カテゴリ「${category}」で${books.length}冊の書籍を発見、上位${limitedBooks.length}冊を表示:\n\n`;
+        
+        limitedBooks.forEach((book, index) => {
+          result += `## 📖 選択肢 ${index + 1}: ${book.title}\n`;
+          result += `- **著者**: ${book.author.join(', ')}\n`;
+          if (book.isbn) result += `- **ISBN**: ${book.isbn}\n`;
+          if (book.publishedDate) result += `- **出版年**: ${book.publishedDate}\n`;
+          if (book.publisher) result += `- **出版社**: ${book.publisher}\n`;
+          if (book.categories && book.categories.length > 0) {
+            result += `- **カテゴリ**: ${book.categories.slice(0, 3).join(', ')}\n`;
+          }
+          if (book.rating) result += `- **評価**: ⭐ ${book.rating}/5\n`;
+          result += '\n';
+        });
+        
+        result += `---\n\n💡 **次のステップ:**\n`;
+        result += `1. ノート作成: 'create_book_note' に **option_number: 1-${limitedBooks.length}** を指定\n`;
+        result += `2. 詳細検索: ISBN検索やより具体的なタイトル検索を試す\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `カテゴリ検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_book_recommendations': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { based_on_book, genre, max_results = 5 } = args as any;
+      
+      try {
+        let books: BookMetadata[] = [];
+        let searchTerm = '';
+        
+        if (based_on_book) {
+          // Extract author or similar themes from the book
+          searchTerm = `${based_on_book} similar recommendations`;
+        } else if (genre) {
+          searchTerm = `${genre} bestseller recommendations`;
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '📚 推薦基準を指定してください。\n\n**例:**\n- based_on_book: "ハリー・ポッター" (類似書籍推薦)\n- genre: "SF" (ジャンル別推薦)',
+              },
+            ],
+          };
+        }
+        
+        books = await bookSearchPlugin.searchByTitle(searchTerm);
+        
+        if (books.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `🔍 「${based_on_book || genre}」に基づく推薦書籍が見つかりませんでした。\n\n別のキーワードを試してください。`,
+              },
+            ],
+          };
+        }
+        
+        const limitedBooks = books.slice(0, Math.min(max_results, 5));
+        lastBookSearchResults = limitedBooks;
+        
+        let result = `🎯 推薦書籍リスト\n`;
+        result += based_on_book ? `「${based_on_book}」に基づく推薦:\n\n` : `「${genre}」ジャンルの推薦:\n\n`;
+        
+        limitedBooks.forEach((book, index) => {
+          result += `## 🌟 推薦 ${index + 1}: ${book.title}\n`;
+          result += `- **著者**: ${book.author.join(', ')}\n`;
+          if (book.publishedDate) result += `- **出版年**: ${book.publishedDate}\n`;
+          if (book.rating) result += `- **評価**: ⭐ ${book.rating}/5\n`;
+          if (book.description) {
+            const shortDesc = book.description.length > 150 ? 
+              book.description.substring(0, 150) + '...' : 
+              book.description;
+            result += `- **概要**: ${shortDesc}\n`;
+          }
+          result += '\n';
+        });
+        
+        result += `💡 **ノート作成**: create_book_note(option_number: 1-${limitedBooks.length})\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `推薦書籍検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'create_reading_list': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Book Search not available.',
+            },
+          ],
+        };
+      }
+      
+      const { list_name, theme, books = [], folder = 'Reading Lists' } = args as any;
+      
+      if (!list_name) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📋 読書リスト名を指定してください。\n\n**例**: create_reading_list(list_name: "2024年科学技術書", theme: "AI・機械学習")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        let content = `# ${list_name}\n\n`;
+        content += `**作成日**: ${new Date().toLocaleDateString('ja-JP')}\n`;
+        if (theme) content += `**テーマ**: ${theme}\n`;
+        content += `**ステータス**: 📚 進行中\n\n`;
+        
+        content += `## 📖 読書リスト\n\n`;
+        
+        if (books.length > 0) {
+          books.forEach((book: any, index: number) => {
+            content += `### ${index + 1}. ${book.title || book}\n`;
+            content += `- [ ] 読了\n`;
+            if (typeof book === 'object') {
+              if (book.author) content += `- **著者**: ${Array.isArray(book.author) ? book.author.join(', ') : book.author}\n`;
+              if (book.isbn) content += `- **ISBN**: ${book.isbn}\n`;
+              if (book.notes) content += `- **メモ**: ${book.notes}\n`;
+            }
+            content += `- **読書開始日**: \n`;
+            content += `- **読了日**: \n`;
+            content += `- **評価**: /5\n`;
+            content += `- **感想**: \n\n`;
+          });
+        } else if (theme) {
+          // Auto-populate with theme-based recommendations
+          const searchResults = await bookSearchPlugin.searchByTitle(theme);
+          const topBooks = searchResults.slice(0, 5);
+          
+          if (topBooks.length > 0) {
+            content += `*以下は「${theme}」テーマの推薦書籍です:*\n\n`;
+            topBooks.forEach((book, index) => {
+              content += `### ${index + 1}. ${book.title}\n`;
+              content += `- [ ] 読了\n`;
+              content += `- **著者**: ${book.author.join(', ')}\n`;
+              if (book.isbn) content += `- **ISBN**: ${book.isbn}\n`;
+              content += `- **読書開始日**: \n`;
+              content += `- **読了日**: \n`;
+              content += `- **評価**: /5\n`;
+              content += `- **感想**: \n\n`;
+            });
+          }
+        } else {
+          content += `*書籍を追加してリストを完成させてください*\n\n`;
+          content += `### 1. \n`;
+          content += `- [ ] 読了\n`;
+          content += `- **著者**: \n`;
+          content += `- **読書開始日**: \n`;
+          content += `- **読了日**: \n`;
+          content += `- **評価**: /5\n`;
+          content += `- **感想**: \n\n`;
+        }
+        
+        content += `## 📊 進捗状況\n\n`;
+        content += `- **総書籍数**: ${books.length || (theme ? 5 : 1)}\n`;
+        content += `- **読了数**: 0\n`;
+        content += `- **進捗率**: 0%\n\n`;
+        
+        content += `## 🎯 読書目標\n\n`;
+        content += `- **目標完了日**: \n`;
+        content += `- **1週間あたりの読書時間**: \n`;
+        content += `- **目標**: \n\n`;
+        
+        content += `## 📝 全体感想・学び\n\n`;
+        content += `*読書リスト完了後の総評を記入*\n\n`;
+        
+        const notePath = path.join(selectedVault, folder, `${list_name}.md`);
+        
+        // Add frontmatter
+        const metadata = {
+          tags: ['reading-list', 'books'],
+          theme: theme || '',
+          created: new Date().toISOString(),
+          status: 'in-progress',
+          total_books: books.length || (theme ? 5 : 1),
+          completed_books: 0,
+        };
+        
+        const fullContent = createFrontmatter(metadata) + content;
+        
+        await fs.mkdir(path.dirname(notePath), { recursive: true });
+        await fs.writeFile(notePath, fullContent, 'utf-8');
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📋 読書リスト作成完了!\n\n**リスト名**: ${list_name}\n**パス**: ${path.relative(selectedVault, notePath)}\n**書籍数**: ${books.length || (theme ? 5 : 1)}冊\n\n読書リストに書籍を追加したり、読書進捗を更新してください。`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `読書リスト作成エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'format_book_template': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { book_data, template_string, variables = {} } = args as any;
+      
+      if (!book_data || !template_string) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📝 書籍データとテンプレート文字列が必要です。\n\n**例**:\nformat_book_template(\n  book_data: {...},\n  template_string: "# {{title}}\\n\\n著者: {{author}}\\n評価: {{rating}}/5"\n)',
+            },
+          ],
+        };
+      }
+      
+      try {
+        // Process template with custom variables
+        let processedTemplate = template_string;
+        
+        // Add custom variables to template processing
+        Object.keys(variables).forEach(key => {
+          const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+          processedTemplate = processedTemplate.replace(regex, variables[key] || '');
+        });
+        
+        const formattedContent = bookSearchPlugin.formatAsMarkdown(book_data, processedTemplate);
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📄 フォーマット結果:\n\n---\n\n${formattedContent}\n\n---\n\n💡 このコンテンツをノートとして保存する場合は create_book_note を使用してください。`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `テンプレートフォーマットエラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_book_details': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { isbn, title, author } = args as any;
+      
+      if (!isbn && !title) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '🔍 ISBNまたはタイトルを指定してください。\n\n**例**:\n- get_book_details(isbn: "9784123456789")\n- get_book_details(title: "ハリー・ポッター", author: "J.K.ローリング")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        let book: BookMetadata | null = null;
+        
+        if (isbn) {
+          book = await bookSearchPlugin.searchByISBN(isbn);
+        } else {
+          const books = await bookSearchPlugin.searchByTitle(title, author);
+          book = books.length > 0 ? books[0] : null;
+        }
+        
+        if (!book) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📚 指定された書籍が見つかりませんでした。\n\n検索条件: ${isbn ? `ISBN: ${isbn}` : `タイトル: ${title}${author ? `, 著者: ${author}` : ''}`}`,
+              },
+            ],
+          };
+        }
+        
+        let result = `📖 **書籍詳細情報**\n\n`;
+        result += `**タイトル**: ${book.title}\n`;
+        result += `**著者**: ${book.author.join(', ')}\n`;
+        if (book.isbn) result += `**ISBN**: ${book.isbn}\n`;
+        if (book.publisher) result += `**出版社**: ${book.publisher}\n`;
+        if (book.publishedDate) result += `**出版年**: ${book.publishedDate}\n`;
+        if (book.pageCount) result += `**ページ数**: ${book.pageCount}\n`;
+        if (book.language) result += `**言語**: ${book.language}\n`;
+        if (book.rating) result += `**評価**: ⭐ ${book.rating}/5\n`;
+        if (book.categories && book.categories.length > 0) {
+          result += `**カテゴリ**: ${book.categories.join(', ')}\n`;
+        }
+        result += '\n';
+        
+        if (book.description) {
+          result += `**📝 概要**:\n${book.description}\n\n`;
+        }
+        
+        if (book.thumbnail) {
+          result += `**🖼️ カバー画像**: ${book.thumbnail}\n\n`;
+        }
+        
+        result += `---\n\n`;
+        result += `💡 **次のアクション**:\n`;
+        result += `1. ノート作成: create_book_note(book_data: <この書籍データ>)\n`;
+        result += `2. 読書リストに追加: create_reading_list() で使用\n`;
+        result += `3. 類似書籍検索: get_book_recommendations(based_on_book: "${book.title}")\n`;
+        
+        // Store for easy note creation
+        lastBookSearchResults = [book];
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `書籍詳細取得エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'search_books_by_author': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { author, max_results = 10 } = args as any;
+      
+      if (!author) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '👤 著者名を指定してください。\n\n**例**: search_books_by_author(author: "村上春樹")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const books = await bookSearchPlugin.searchByTitle('', author);
+        
+        if (books.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📚 著者「${author}」の書籍が見つかりませんでした。\n\n著者名のスペルや表記を確認してください。`,
+              },
+            ],
+          };
+        }
+        
+        const limitedBooks = books.slice(0, Math.min(max_results, 10));
+        lastBookSearchResults = limitedBooks;
+        
+        let result = `👤 著者「${author}」の作品 ${books.length}冊発見、上位${limitedBooks.length}冊を表示:\n\n`;
+        
+        limitedBooks.forEach((book, index) => {
+          result += `## 📚 作品 ${index + 1}: ${book.title}\n`;
+          result += `- **出版年**: ${book.publishedDate || '不明'}\n`;
+          if (book.isbn) result += `- **ISBN**: ${book.isbn}\n`;
+          if (book.publisher) result += `- **出版社**: ${book.publisher}\n`;
+          if (book.pageCount) result += `- **ページ数**: ${book.pageCount}\n`;
+          if (book.rating) result += `- **評価**: ⭐ ${book.rating}/5\n`;
+          if (book.description) {
+            const shortDesc = book.description.length > 200 ? 
+              book.description.substring(0, 200) + '...' : 
+              book.description;
+            result += `- **概要**: ${shortDesc}\n`;
+          }
+          result += '\n';
+        });
+        
+        result += `---\n\n💡 **次のアクション**:\n`;
+        result += `1. ノート作成: create_book_note(option_number: 1-${limitedBooks.length})\n`;
+        result += `2. 読書リスト作成: create_reading_list(list_name: "${author}作品集")\n`;
+        result += `3. 詳細情報: get_book_details() で個別書籍の詳細を取得\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `著者検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'compare_book_editions': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { title, author } = args as any;
+      
+      if (!title) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📚 比較する書籍のタイトルを指定してください。\n\n**例**: compare_book_editions(title: "1984", author: "George Orwell")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const books = await bookSearchPlugin.searchByTitle(title, author);
+        
+        if (books.length < 2) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📖 「${title}」の複数版が見つかりませんでした（${books.length}件）。\n\n単一版の詳細を取得する場合は get_book_details を使用してください。`,
+              },
+            ],
+          };
+        }
+        
+        // Group by similar titles (different editions)
+        const editions = books.slice(0, 5); // Limit to 5 editions
+        lastBookSearchResults = editions;
+        
+        let result = `📚 「${title}」版比較 (${editions.length}版):\n\n`;
+        
+        editions.forEach((book, index) => {
+          result += `## 📖 版 ${index + 1}: ${book.title}\n`;
+          result += `- **出版社**: ${book.publisher || '不明'}\n`;
+          result += `- **出版年**: ${book.publishedDate || '不明'}\n`;
+          if (book.isbn) result += `- **ISBN**: ${book.isbn}\n`;
+          if (book.pageCount) result += `- **ページ数**: ${book.pageCount}\n`;
+          if (book.language) result += `- **言語**: ${book.language}\n`;
+          if (book.rating) result += `- **評価**: ⭐ ${book.rating}/5\n`;
+          
+          // Price comparison would need additional API
+          result += `- **特徴**: `;
+          if (book.categories && book.categories.length > 0) {
+            result += book.categories.slice(0, 2).join(', ');
+          } else {
+            result += '標準版';
+          }
+          result += '\n\n';
+        });
+        
+        // Comparison summary
+        result += `## 📊 版比較サマリー\n\n`;
+        result += `| 項目 | 版1 | 版2${editions.length > 2 ? ' | 版3' : ''}${editions.length > 3 ? ' | 版4' : ''}${editions.length > 4 ? ' | 版5' : ''} |\n`;
+        result += `|------|-----|-----${editions.length > 2 ? '|-----' : ''}${editions.length > 3 ? '|-----' : ''}${editions.length > 4 ? '|-----' : ''} |\n`;
+        result += `| 出版社 | ${editions[0]?.publisher || '-'} | ${editions[1]?.publisher || '-'}${editions.length > 2 ? ` | ${editions[2]?.publisher || '-'}` : ''}${editions.length > 3 ? ` | ${editions[3]?.publisher || '-'}` : ''}${editions.length > 4 ? ` | ${editions[4]?.publisher || '-'}` : ''} |\n`;
+        result += `| 出版年 | ${editions[0]?.publishedDate || '-'} | ${editions[1]?.publishedDate || '-'}${editions.length > 2 ? ` | ${editions[2]?.publishedDate || '-'}` : ''}${editions.length > 3 ? ` | ${editions[3]?.publishedDate || '-'}` : ''}${editions.length > 4 ? ` | ${editions[4]?.publishedDate || '-'}` : ''} |\n`;
+        result += `| ページ数 | ${editions[0]?.pageCount || '-'} | ${editions[1]?.pageCount || '-'}${editions.length > 2 ? ` | ${editions[2]?.pageCount || '-'}` : ''}${editions.length > 3 ? ` | ${editions[3]?.pageCount || '-'}` : ''}${editions.length > 4 ? ` | ${editions[4]?.pageCount || '-'}` : ''} |\n`;
+        result += `| 評価 | ${editions[0]?.rating || '-'} | ${editions[1]?.rating || '-'}${editions.length > 2 ? ` | ${editions[2]?.rating || '-'}` : ''}${editions.length > 3 ? ` | ${editions[3]?.rating || '-'}` : ''}${editions.length > 4 ? ` | ${editions[4]?.rating || '-'}` : ''} |\n\n`;
+        
+        result += `💡 **おすすめ選択基準**:\n`;
+        result += `1. **最新版**: より新しい出版年を選択\n`;
+        result += `2. **評価**: より高い評価の版を選択\n`;
+        result += `3. **出版社**: 信頼できる出版社を選択\n\n`;
+        
+        result += `📝 **ノート作成**: create_book_note(option_number: 1-${editions.length})\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `版比較エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_book_series': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { series_name, author, max_results = 10 } = args as any;
+      
+      if (!series_name) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📚 シリーズ名を指定してください。\n\n**例**: get_book_series(series_name: "ハリー・ポッター", author: "J.K.ローリング")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const books = await bookSearchPlugin.searchByTitle(series_name, author);
+        
+        if (books.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📚 シリーズ「${series_name}」が見つかりませんでした。\n\nシリーズ名や著者名を確認してください。`,
+              },
+            ],
+          };
+        }
+        
+        const seriesBooks = books.slice(0, Math.min(max_results, 10));
+        lastBookSearchResults = seriesBooks;
+        
+        let result = `📚 「${series_name}」シリーズ ${books.length}冊発見、上位${seriesBooks.length}冊を表示:\n\n`;
+        
+        if (author) {
+          result += `👤 **著者**: ${author}\n\n`;
+        }
+        
+        seriesBooks.forEach((book, index) => {
+          result += `## 📖 第${index + 1}巻: ${book.title}\n`;
+          result += `- **著者**: ${book.author.join(', ')}\n`;
+          if (book.isbn) result += `- **ISBN**: ${book.isbn}\n`;
+          if (book.publishedDate) result += `- **出版年**: ${book.publishedDate}\n`;
+          if (book.publisher) result += `- **出版社**: ${book.publisher}\n`;
+          if (book.pageCount) result += `- **ページ数**: ${book.pageCount}\n`;
+          if (book.rating) result += `- **評価**: ⭐ ${book.rating}/5\n`;
+          if (book.description) {
+            const shortDesc = book.description.length > 150 ? 
+              book.description.substring(0, 150) + '...' : 
+              book.description;
+            result += `- **概要**: ${shortDesc}\n`;
+          }
+          result += '\n';
+        });
+        
+        // Series statistics
+        const avgRating = seriesBooks
+          .filter(book => book.rating)
+          .reduce((sum, book) => sum + (book.rating || 0), 0) / 
+          seriesBooks.filter(book => book.rating).length;
+        
+        const totalPages = seriesBooks
+          .filter(book => book.pageCount)
+          .reduce((sum, book) => sum + (book.pageCount || 0), 0);
+        
+        result += `## 📊 シリーズ統計\n\n`;
+        if (!isNaN(avgRating)) result += `- **平均評価**: ⭐ ${avgRating.toFixed(1)}/5\n`;
+        if (totalPages > 0) result += `- **総ページ数**: ${totalPages.toLocaleString()}\n`;
+        result += `- **巻数**: ${seriesBooks.length}巻\n`;
+        
+        const publishYears = seriesBooks
+          .map(book => book.publishedDate)
+          .filter(date => date)
+          .sort();
+        if (publishYears.length > 0) {
+          result += `- **出版期間**: ${publishYears[0]} - ${publishYears[publishYears.length - 1]}\n`;
+        }
+        result += '\n';
+        
+        result += `---\n\n💡 **次のアクション**:\n`;
+        result += `1. 個別ノート作成: create_book_note(option_number: 1-${seriesBooks.length})\n`;
+        result += `2. シリーズ読書リスト: create_reading_list(list_name: "${series_name}シリーズ")\n`;
+        result += `3. 詳細比較: compare_book_editions() で特定巻の版比較\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `シリーズ検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'track_reading_progress': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+      
+      const { book_title, current_page, total_pages, reading_notes, reading_session_minutes, target_completion_date } = args as any;
+      
+      if (!book_title) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📚 読書進捗を記録する書籍名を指定してください。\n\n**例**: track_reading_progress(book_title: "1984", current_page: 45, total_pages: 328)',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const progressDir = path.join(selectedVault, 'Reading Progress');
+        await fs.mkdir(progressDir, { recursive: true });
+        
+        const progressFile = path.join(progressDir, `${book_title.replace(/[/\\?%*:|"<>]/g, '_')}_進捗.md`);
+        const today = new Date().toLocaleDateString('ja-JP');
+        const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        
+        let content = '';
+        let isNewFile = false;
+        
+        try {
+          content = await fs.readFile(progressFile, 'utf-8');
+        } catch {
+          // File doesn't exist, create new one
+          isNewFile = true;
+          content = `# ${book_title} 読書進捗記録\n\n`;
+          content += `**開始日**: ${today}\n`;
+          content += `**目標完了日**: ${target_completion_date || '未設定'}\n`;
+          content += `**総ページ数**: ${total_pages || '不明'}\n\n`;
+          content += `## 📊 進捗グラフ\n\n`;
+          content += `| 日付 | ページ | 進捗率 | セッション(分) | メモ |\n`;
+          content += `|------|--------|--------|----------------|------|\n`;
+        }
+        
+        // Calculate progress
+        const progressPercent = total_pages ? 
+          Math.round((current_page / total_pages) * 100) : 0;
+        
+        // Add today's entry
+        const newEntry = `| ${today} ${now} | ${current_page || '-'} | ${progressPercent || '-'}% | ${reading_session_minutes || '-'} | ${reading_notes || '-'} |\n`;
+        
+        if (content.includes('| 日付 |')) {
+          // Insert after the table header
+          const lines = content.split('\n');
+          let insertIndex = -1;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('|------|')) {
+              insertIndex = i + 1;
+              break;
+            }
+          }
+          
+          if (insertIndex !== -1) {
+            lines.splice(insertIndex, 0, newEntry.trim());
+            content = lines.join('\n');
+          } else {
+            content += newEntry;
+          }
+        } else {
+          content += newEntry;
+        }
+        
+        // Add reading stats section if new file
+        if (isNewFile) {
+          content += `\n## 📈 読書統計\n\n`;
+          content += `- **現在のページ**: ${current_page || 0}\n`;
+          content += `- **進捗率**: ${progressPercent || 0}%\n`;
+          content += `- **残りページ数**: ${total_pages ? total_pages - (current_page || 0) : '不明'}\n`;
+          if (reading_session_minutes) {
+            content += `- **今日の読書時間**: ${reading_session_minutes}分\n`;
+          }
+          content += `\n## 🎯 読書目標\n\n`;
+          content += `- [ ] 毎日読書する\n`;
+          content += `- [ ] 週に○ページ進める\n`;
+          content += `- [ ] ${target_completion_date || '目標日'}までに完了する\n\n`;
+          content += `## 📝 読書メモ・感想\n\n`;
+          content += `### ${today}\n`;
+          if (reading_notes) {
+            content += `${reading_notes}\n\n`;
+          } else {
+            content += `*今日の読書メモを記入*\n\n`;
+          }
+        }
+        
+        // Add frontmatter
+        const metadata = {
+          tags: ['reading-progress', 'books'],
+          book_title,
+          current_page: current_page || 0,
+          total_pages: total_pages || 0,
+          progress_percent: progressPercent,
+          last_updated: new Date().toISOString(),
+          target_completion_date: target_completion_date || null,
+        };
+        
+        const fullContent = createFrontmatter(metadata) + content;
+        
+        await fs.writeFile(progressFile, fullContent, 'utf-8');
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📚 読書進捗記録完了!\n\n**書籍**: ${book_title}\n**現在**: ${current_page || 0}/${total_pages || '?'} ページ\n**進捗率**: ${progressPercent || 0}%\n**ファイル**: ${path.relative(selectedVault, progressFile)}\n\n${isNewFile ? '新しい進捗ファイルを作成しました。' : '進捗を更新しました。'}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `読書進捗記録エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'create_book_review_template': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+      
+      const { template_name = 'Book Review', custom_fields = [] } = args as any;
+      
+      try {
+        const templatesDir = path.join(selectedVault, 'Templates');
+        await fs.mkdir(templatesDir, { recursive: true });
+        
+        const templateFile = path.join(templatesDir, `${template_name}.md`);
+        
+        let content = `# {{title}}\n\n`;
+        content += `**著者**: {{author}}\n`;
+        content += `**ISBN**: {{isbn}}\n`;
+        content += `**出版社**: {{publisher}}\n`;
+        content += `**出版年**: {{publishedDate}}\n`;
+        content += `**ページ数**: {{pageCount}}\n`;
+        content += `**読書開始日**: {{date}}\n`;
+        content += `**読了日**: \n`;
+        content += `**私の評価**: /5 ⭐\n`;
+        content += `**公式評価**: {{rating}}/5\n\n`;
+        
+        // Add custom fields if provided
+        if (custom_fields.length > 0) {
+          content += `## カスタムフィールド\n\n`;
+          custom_fields.forEach((field: string) => {
+            content += `**${field}**: \n`;
+          });
+          content += '\n';
+        }
+        
+        content += `## 📖 概要\n\n`;
+        content += `{{description}}\n\n`;
+        
+        content += `## 🎯 読書動機\n\n`;
+        content += `*この本を読むことにした理由*\n\n`;
+        
+        content += `## 📝 重要なポイント・引用\n\n`;
+        content += `### 第1章\n`;
+        content += `- \n\n`;
+        content += `### 第2章\n`;
+        content += `- \n\n`;
+        
+        content += `## 🧠 学んだこと・気づき\n\n`;
+        content += `1. **主要な学び**: \n`;
+        content += `2. **新しい視点**: \n`;
+        content += `3. **実践可能なこと**: \n\n`;
+        
+        content += `## 💭 感想・評価\n\n`;
+        content += `### 良かった点\n`;
+        content += `- \n\n`;
+        content += `### 改善できる点\n`;
+        content += `- \n\n`;
+        content += `### 全体評価\n`;
+        content += `*5段階評価での詳細コメント*\n\n`;
+        
+        content += `## 🔗 関連書籍・参考資料\n\n`;
+        content += `- [[関連書籍1]]\n`;
+        content += `- [[関連書籍2]]\n\n`;
+        
+        content += `## 📚 次に読みたい本\n\n`;
+        content += `*この本から興味を持った次の読書候補*\n\n`;
+        
+        content += `## 🏷️ タグ\n\n`;
+        content += `{{categories}}\n\n`;
+        content += `---\n`;
+        content += `*作成日: {{today}}*\n`;
+        
+        await fs.writeFile(templateFile, content, 'utf-8');
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📝 書籍レビューテンプレート作成完了!\n\n**テンプレート名**: ${template_name}\n**パス**: ${path.relative(selectedVault, templateFile)}\n**カスタムフィールド数**: ${custom_fields.length}\n\n使用方法:\n1. create_book_note(template: "${template_name}")\n2. または create_from_template(template_name: "${template_name}")\n\nこのテンプレートは書籍の詳細情報を自動で埋め込み、構造化されたレビューを作成できます。`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `書籍レビューテンプレート作成エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'bulk_import_books': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Book Search not available.',
+            },
+          ],
+        };
+      }
+      
+      const { book_list, folder = 'Books', template, create_reading_list = true } = args as any;
+      
+      if (!book_list || !Array.isArray(book_list) || book_list.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📚 インポートする書籍リストを指定してください。\n\n**例**:\nbulk_import_books(\n  book_list: [\n    {title: "1984", author: "George Orwell"},\n    {isbn: "9784123456789"},\n    {title: "ハリー・ポッター"}\n  ]\n)',
+            },
+          ],
+        };
+      }
+      
+      try {
+        let results = {
+          successful: 0,
+          failed: 0,
+          created_notes: [] as string[],
+          failed_books: [] as any[],
+        };
+        
+        const importedBooks: BookMetadata[] = [];
+        
+        for (let i = 0; i < book_list.length; i++) {
+          const bookSpec = book_list[i];
+          let book: BookMetadata | null = null;
+          
+          try {
+            if (bookSpec.isbn) {
+              book = await bookSearchPlugin.searchByISBN(bookSpec.isbn);
+            } else if (bookSpec.title) {
+              const books = await bookSearchPlugin.searchByTitle(bookSpec.title, bookSpec.author);
+              book = books.length > 0 ? books[0] : null;
+            }
+            
+            if (book) {
+              // Create note for this book
+              const noteTitle = `${book.title} - ${book.author.join(', ')}`;
+              const notePath = path.join(selectedVault, folder, `${noteTitle}.md`);
+              
+              let content: string;
+              if (template && templaterPlugin) {
+                const templateContent = await templaterPlugin.getTemplate(template);
+                content = templateContent ? 
+                  bookSearchPlugin.formatAsMarkdown(book, templateContent) :
+                  bookSearchPlugin.formatAsMarkdown(book);
+              } else {
+                content = bookSearchPlugin.formatAsMarkdown(book);
+              }
+              
+              // Add metadata
+              const metadata = {
+                tags: ['book', 'reading', 'bulk-import'],
+                isbn: book.isbn,
+                author: book.author,
+                rating: book.rating,
+                created: new Date().toISOString(),
+                import_batch: new Date().toISOString().split('T')[0],
+              };
+              
+              const fullContent = createFrontmatter(metadata) + content;
+              
+              await fs.mkdir(path.dirname(notePath), { recursive: true });
+              await fs.writeFile(notePath, fullContent, 'utf-8');
+              
+              importedBooks.push(book);
+              results.successful++;
+              results.created_notes.push(path.relative(selectedVault, notePath));
+            } else {
+              results.failed++;
+              results.failed_books.push(bookSpec);
+            }
+          } catch (error) {
+            results.failed++;
+            results.failed_books.push({...bookSpec, error: error.toString()});
+          }
+          
+          // Small delay to avoid API rate limiting
+          if (i < book_list.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+        
+        // Create reading list if requested
+        let readingListPath = '';
+        if (create_reading_list && importedBooks.length > 0) {
+          const listName = `一括インポート_${new Date().toLocaleDateString('ja-JP').replace(/\//g, '-')}`;
+          const listPath = path.join(selectedVault, 'Reading Lists', `${listName}.md`);
+          
+          let listContent = `# ${listName}\n\n`;
+          listContent += `**作成日**: ${new Date().toLocaleDateString('ja-JP')}\n`;
+          listContent += `**インポート数**: ${importedBooks.length}冊\n`;
+          listContent += `**ステータス**: 📚 一括インポート完了\n\n`;
+          
+          listContent += `## 📚 インポートされた書籍\n\n`;
+          
+          importedBooks.forEach((book, index) => {
+            listContent += `### ${index + 1}. ${book.title}\n`;
+            listContent += `- [ ] 読了\n`;
+            listContent += `- **著者**: ${book.author.join(', ')}\n`;
+            if (book.isbn) listContent += `- **ISBN**: ${book.isbn}\n`;
+            listContent += `- **ノートリンク**: [[${book.title} - ${book.author.join(', ')}]]\n`;
+            listContent += `- **読書開始日**: \n`;
+            listContent += `- **読了日**: \n`;
+            listContent += `- **評価**: /5\n\n`;
+          });
+          
+          const listMetadata = {
+            tags: ['reading-list', 'books', 'bulk-import'],
+            created: new Date().toISOString(),
+            total_books: importedBooks.length,
+            completed_books: 0,
+          };
+          
+          const fullListContent = createFrontmatter(listMetadata) + listContent;
+          
+          await fs.mkdir(path.dirname(listPath), { recursive: true });
+          await fs.writeFile(listPath, fullListContent, 'utf-8');
+          
+          readingListPath = path.relative(selectedVault, listPath);
+        }
+        
+        let result = `📚 一括書籍インポート完了!\n\n`;
+        result += `## 📊 インポート結果\n`;
+        result += `- **成功**: ${results.successful}冊\n`;
+        result += `- **失敗**: ${results.failed}冊\n`;
+        result += `- **成功率**: ${Math.round((results.successful / book_list.length) * 100)}%\n\n`;
+        
+        if (results.successful > 0) {
+          result += `## ✅ 作成されたノート (${results.successful}件)\n`;
+          results.created_notes.slice(0, 10).forEach((note, index) => {
+            result += `${index + 1}. ${note}\n`;
+          });
+          if (results.created_notes.length > 10) {
+            result += `... および他${results.created_notes.length - 10}件\n`;
+          }
+          result += '\n';
+        }
+        
+        if (results.failed > 0) {
+          result += `## ❌ インポート失敗 (${results.failed}件)\n`;
+          results.failed_books.slice(0, 5).forEach((book, index) => {
+            result += `${index + 1}. ${JSON.stringify(book)}\n`;
+          });
+          result += '\n';
+        }
+        
+        if (readingListPath) {
+          result += `## 📋 読書リスト作成\n`;
+          result += `- **パス**: ${readingListPath}\n`;
+          result += `- **書籍数**: ${importedBooks.length}冊\n\n`;
+        }
+        
+        result += `💡 **次のアクション**:\n`;
+        result += `1. 作成されたノートを確認・編集\n`;
+        result += `2. 読書計画を立案\n`;
+        result += `3. 失敗した書籍は手動で再試行\n`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `一括インポートエラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'create_daily_note': {
+      if (!selectedVault || !dailyNotesPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Daily Notes plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { date, template, folder, template_variables = {}, confirm = false } = args as any;
+      
+      try {
+        // Parse and validate date if provided
+        let targetDate = date ? new Date(date) : new Date();
+        
+        // Validate date
+        if (isNaN(targetDate.getTime())) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📅 無効な日付形式です: "${date}"\n\n**有効な形式:**\n- YYYY-MM-DD (例: "2024-01-15")\n- 自然言語 (例: "today", "tomorrow", "2024-01-15")\n- 空白の場合は今日の日付を使用`,
+              },
+            ],
+          };
+        }
+        
+        // Check if daily note already exists
+        const exists = await dailyNotesPlugin.dailyNoteExists(date, folder);
+        if (exists && !confirm) {
+          const dateStr = targetDate.toLocaleDateString('ja-JP');
+          const formattedDate = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📅 デイリーノート既存確認\n\n**対象日付**: ${dateStr} (${formattedDate})\n**フォルダ**: ${folder || 'Daily Notes'}\n\n⚠️ この日付のデイリーノートは既に存在しています。\n\n✅ **作成する（上書き）**: create_daily_note(date: "${date || 'today'}", template: "${template || ''}", folder: "${folder || ''}", confirm: true)\n❌ **キャンセル**: 操作をキャンセルします\n\n💡 **別の日付を試す**: create_daily_note(date: "YYYY-MM-DD")`,
+              },
+            ],
+          };
+        }
+        
+        // Get template content if specified
+        let templateContent = '';
+        if (template && templaterPlugin) {
+          try {
+            templateContent = await templaterPlugin.getTemplate(template);
+            if (!templateContent) {
+              // Template not found, list available templates
+              const templates = await templaterPlugin.listTemplates();
+              const templateList = templates.length > 0 ? 
+                templates.map(t => t.name).join('\n- ') : 
+                '(テンプレートが見つかりません)';
+              
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: `📝 テンプレート「${template}」が見つかりません。\n\n**利用可能なテンプレート:**\n- ${templateList}\n\n**デフォルトテンプレートで作成**: create_daily_note(date: "${date || 'today'}", folder: "${folder || ''}")`,
+                  },
+                ],
+              };
+            }
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `テンプレート取得エラー: ${error}`,
+                },
+              ],
+            };
+          }
+        }
+        
+        // Create the daily note
+        const result = await dailyNotesPlugin.createDailyNote(
+          date,
+          templateContent,
+          folder,
+          template_variables
+        );
+        
+        if (result.success) {
+          const dateStr = targetDate.toLocaleDateString('ja-JP');
+          const dayName = targetDate.toLocaleDateString('ja-JP', { weekday: 'long' });
+          
+          let response = `📅 デイリーノート作成完了!\n\n`;
+          response += `**日付**: ${dateStr} (${dayName})\n`;
+          response += `**パス**: ${result.path}\n`;
+          response += `**フォルダ**: ${folder || 'Daily Notes'}\n`;
+          
+          if (template) {
+            response += `**テンプレート**: ${template}\n`;
+          }
+          
+          if (Object.keys(template_variables).length > 0) {
+            response += `**変数**: ${Object.keys(template_variables).length}個\n`;
+          }
+          
+          // Add helpful next steps
+          response += `\n💡 **次のアクション:**\n`;
+          response += `1. ノートを開いて内容を編集\n`;
+          response += `2. 今日のタスクや予定を追加\n`;
+          response += `3. 他の日付のデイリーノート作成\n`;
+          
+          // Show quick access to related dates
+          const tomorrow = new Date(targetDate);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const yesterday = new Date(targetDate);
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+          
+          response += `\n📆 **関連する日付:**\n`;
+          response += `- 昨日: create_daily_note(date: "${yesterdayStr}")\n`;
+          response += `- 明日: create_daily_note(date: "${tomorrowStr}")\n`;
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: response,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `デイリーノート作成エラー: ${result.error}`,
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `デイリーノート作成エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'search_notes_by_date_range': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+      
+      const { start_date, end_date, date_type = 'created', folder, include_subfolders = true, max_results = 50 } = args as any;
+      
+      if (!start_date) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📅 開始日を指定してください。\n\n**例:**\n- search_notes_by_date_range(start_date: "2024-01-01", end_date: "2024-01-31")\n- search_notes_by_date_range(start_date: "2024-01-01", date_type: "modified")\n- search_notes_by_date_range(start_date: "2024-01-01", folder: "Projects")',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const startDate = new Date(start_date);
+        const endDate = end_date ? new Date(end_date) : new Date();
+        
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📅 無効な日付形式です。\n\n**有効な形式:** YYYY-MM-DD (例: "2024-01-15")\n**開始日:** ${start_date}\n**終了日:** ${end_date || '今日'}`,
+              },
+            ],
+          };
+        }
+        
+        if (startDate > endDate) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '📅 開始日が終了日より後になっています。日付を確認してください。',
+              },
+            ],
+          };
+        }
+        
+        const searchDir = folder ? path.join(selectedVault, folder) : selectedVault;
+        const foundNotes: Array<{
+          path: string;
+          relativePath: string;
+          title: string;
+          date: Date;
+          dateStr: string;
+          size: number;
+        }> = [];
+        
+        // Recursive function to scan directories
+        async function scanDirectory(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.') && include_subfolders) {
+                await scanDirectory(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                try {
+                  const stats = await fs.stat(fullPath);
+                  const checkDate = date_type === 'modified' ? stats.mtime : stats.birthtime || stats.mtime;
+                  
+                  // Check if date falls within range
+                  if (checkDate >= startDate && checkDate <= endDate) {
+                    // Read file to get title
+                    let title = path.basename(entry.name, '.md');
+                    try {
+                      const content = await fs.readFile(fullPath, 'utf-8');
+                      const extractedTitle = extractTitleFromContent(content);
+                      if (extractedTitle) {
+                        title = extractedTitle;
+                      }
+                    } catch {
+                      // Use filename if can't read content
+                    }
+                    
+                    foundNotes.push({
+                      path: fullPath,
+                      relativePath: path.relative(selectedVault, fullPath),
+                      title,
+                      date: checkDate,
+                      dateStr: checkDate.toLocaleDateString('ja-JP'),
+                      size: stats.size,
+                    });
+                  }
+                } catch {
+                  // Skip files that can't be accessed
+                }
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+        
+        await scanDirectory(searchDir);
+        
+        // Sort by date (newest first)
+        foundNotes.sort((a, b) => b.date.getTime() - a.date.getTime());
+        
+        // Limit results
+        const limitedNotes = foundNotes.slice(0, max_results);
+        
+        if (foundNotes.length === 0) {
+          const dateTypeJa = date_type === 'modified' ? '変更' : '作成';
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📅 指定された期間に${dateTypeJa}されたノートが見つかりませんでした。\n\n**検索条件:**\n- 期間: ${startDate.toLocaleDateString('ja-JP')} ～ ${endDate.toLocaleDateString('ja-JP')}\n- 種類: ${dateTypeJa}日時\n- フォルダ: ${folder || '全体'}\n- サブフォルダ含む: ${include_subfolders ? 'はい' : 'いいえ'}`,
+              },
+            ],
+          };
+        }
+        
+        const dateTypeJa = date_type === 'modified' ? '変更' : '作成';
+        let result = `📅 日付範囲検索結果 (${foundNotes.length}件)\n\n`;
+        result += `**検索条件:**\n`;
+        result += `- 期間: ${startDate.toLocaleDateString('ja-JP')} ～ ${endDate.toLocaleDateString('ja-JP')}\n`;
+        result += `- 種類: ${dateTypeJa}日時\n`;
+        result += `- フォルダ: ${folder || '全体'}\n`;
+        result += `- サブフォルダ含む: ${include_subfolders ? 'はい' : 'いいえ'}\n`;
+        
+        if (foundNotes.length > max_results) {
+          result += `- 表示制限: 上位${max_results}件（全${foundNotes.length}件中）\n`;
+        }
+        
+        result += `\n## 📝 検索結果\n\n`;
+        
+        limitedNotes.forEach((note, index) => {
+          result += `### ${index + 1}. ${note.title}\n`;
+          result += `- **パス**: ${note.relativePath}\n`;
+          result += `- **${dateTypeJa}日**: ${note.dateStr}\n`;
+          result += `- **サイズ**: ${(note.size / 1024).toFixed(1)} KB\n`;
+          result += `- **リンク**: [[${note.relativePath.replace('.md', '')}]]\n\n`;
+        });
+        
+        // Add statistics
+        result += `## 📊 統計情報\n\n`;
+        const totalSize = foundNotes.reduce((sum, note) => sum + note.size, 0);
+        result += `- **総件数**: ${foundNotes.length}件\n`;
+        result += `- **合計サイズ**: ${(totalSize / 1024 / 1024).toFixed(2)} MB\n`;
+        result += `- **平均サイズ**: ${(totalSize / foundNotes.length / 1024).toFixed(1)} KB\n`;
+        
+        // Date distribution
+        const dateGroups: { [key: string]: number } = {};
+        foundNotes.forEach(note => {
+          const dateKey = note.date.toLocaleDateString('ja-JP');
+          dateGroups[dateKey] = (dateGroups[dateKey] || 0) + 1;
+        });
+        
+        const topDates = Object.entries(dateGroups)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 5);
+        
+        if (topDates.length > 0) {
+          result += `\n**${dateTypeJa}数が多い日:**\n`;
+          topDates.forEach(([date, count]) => {
+            result += `- ${date}: ${count}件\n`;
+          });
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `日付範囲検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'find_broken_links': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+      
+      const { folder, include_subfolders = true, auto_fix = false, link_types = ['wiki', 'markdown'] } = args as any;
+      
+      try {
+        const searchDir = folder ? path.join(selectedVault, folder) : selectedVault;
+        const brokenLinks: Array<{
+          sourceFile: string;
+          sourceRelativePath: string;
+          linkText: string;
+          linkTarget: string;
+          linkType: 'wiki' | 'markdown';
+          lineNumber: number;
+          canAutoFix: boolean;
+          suggestedFix?: string;
+        }> = [];
+        
+        // Get all markdown files first for reference
+        const allMarkdownFiles: Set<string> = new Set();
+        
+        async function collectMarkdownFiles(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                await collectMarkdownFiles(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                // Store relative path without .md extension for wiki links
+                const relativePath = path.relative(selectedVault, fullPath).replace('.md', '');
+                allMarkdownFiles.add(relativePath);
+                // Also store just the filename without extension
+                allMarkdownFiles.add(path.basename(fullPath, '.md'));
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+        
+        await collectMarkdownFiles(selectedVault);
+        
+        // Function to check if a link target exists
+        function linkExists(target: string): boolean {
+          // Clean the target (remove fragments)
+          const cleanTarget = target.split('#')[0];
+          
+          // Check exact match
+          if (allMarkdownFiles.has(cleanTarget)) return true;
+          
+          // Check if it's a valid file path
+          try {
+            const fullPath = path.resolve(selectedVault, cleanTarget + '.md');
+            return fsSync.existsSync(fullPath);
+          } catch {
+            return false;
+          }
+        }
+        
+        // Function to find similar links (for auto-fix suggestions)
+        function findSimilarLinks(target: string): string[] {
+          const cleanTarget = target.toLowerCase();
+          const similar: string[] = [];
+          
+          for (const file of allMarkdownFiles) {
+            const fileName = file.toLowerCase();
+            // Exact match (case-insensitive)
+            if (fileName === cleanTarget) {
+              similar.push(file);
+            }
+            // Contains the target
+            else if (fileName.includes(cleanTarget) || cleanTarget.includes(fileName)) {
+              similar.push(file);
+            }
+          }
+          
+          return similar.slice(0, 3); // Return top 3 matches
+        }
+        
+        // Recursive function to scan files for broken links
+        async function scanForBrokenLinks(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.') && include_subfolders) {
+                await scanForBrokenLinks(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                try {
+                  const content = await fs.readFile(fullPath, 'utf-8');
+                  const lines = content.split('\n');
+                  const relativePath = path.relative(selectedVault, fullPath);
+                  
+                  lines.forEach((line, lineIndex) => {
+                    // Check wiki-style links [[link]] or [[link|alias]]
+                    if (link_types.includes('wiki')) {
+                      const wikiLinkRegex = /\[\[([^\]|]+)(\|[^\]]+)?\]\]/g;
+                      let match;
+                      
+                      while ((match = wikiLinkRegex.exec(line)) !== null) {
+                        const linkTarget = match[1];
+                        const fullMatch = match[0];
+                        
+                        if (!linkExists(linkTarget)) {
+                          const similarLinks = findSimilarLinks(linkTarget);
+                          
+                          brokenLinks.push({
+                            sourceFile: fullPath,
+                            sourceRelativePath: relativePath,
+                            linkText: fullMatch,
+                            linkTarget,
+                            linkType: 'wiki',
+                            lineNumber: lineIndex + 1,
+                            canAutoFix: similarLinks.length > 0,
+                            suggestedFix: similarLinks.length > 0 ? similarLinks[0] : undefined,
+                          });
+                        }
+                      }
+                    }
+                    
+                    // Check markdown-style links [text](link)
+                    if (link_types.includes('markdown')) {
+                      const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+                      let match;
+                      
+                      while ((match = markdownLinkRegex.exec(line)) !== null) {
+                        const linkText = match[1];
+                        const linkTarget = match[2];
+                        const fullMatch = match[0];
+                        
+                        // Only check local markdown files (not URLs)
+                        if (linkTarget.endsWith('.md') && !linkTarget.startsWith('http')) {
+                          const cleanTarget = linkTarget.replace('.md', '');
+                          if (!linkExists(cleanTarget)) {
+                            const similarLinks = findSimilarLinks(cleanTarget);
+                            
+                            brokenLinks.push({
+                              sourceFile: fullPath,
+                              sourceRelativePath: relativePath,
+                              linkText: fullMatch,
+                              linkTarget: cleanTarget,
+                              linkType: 'markdown',
+                              lineNumber: lineIndex + 1,
+                              canAutoFix: similarLinks.length > 0,
+                              suggestedFix: similarLinks.length > 0 ? similarLinks[0] : undefined,
+                            });
+                          }
+                        }
+                      }
+                    }
+                  });
+                } catch {
+                  // Skip files that can't be read
+                }
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+        
+        await scanForBrokenLinks(searchDir);
+        
+        if (brokenLinks.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ 壊れたリンクは見つかりませんでした！\n\n**検索範囲:**\n- フォルダ: ${folder || '全体'}\n- サブフォルダ含む: ${include_subfolders ? 'はい' : 'いいえ'}\n- リンク種類: ${link_types.join(', ')}\n\n保管庫のリンクは正常です。`,
+              },
+            ],
+          };
+        }
+        
+        let result = `🔗 壊れたリンク検出結果 (${brokenLinks.length}件)\n\n`;
+        result += `**検索条件:**\n`;
+        result += `- フォルダ: ${folder || '全体'}\n`;
+        result += `- サブフォルダ含む: ${include_subfolders ? 'はい' : 'いいえ'}\n`;
+        result += `- リンク種類: ${link_types.join(', ')}\n\n`;
+        
+        // Group by source file
+        const groupedByFile: { [key: string]: typeof brokenLinks } = {};
+        brokenLinks.forEach(link => {
+          if (!groupedByFile[link.sourceRelativePath]) {
+            groupedByFile[link.sourceRelativePath] = [];
+          }
+          groupedByFile[link.sourceRelativePath].push(link);
+        });
+        
+        result += `## 🚫 壊れたリンク詳細\n\n`;
+        
+        Object.entries(groupedByFile).forEach(([filePath, links]) => {
+          result += `### 📄 ${filePath} (${links.length}件)\n\n`;
+          
+          links.forEach((link, index) => {
+            result += `**${index + 1}. 行 ${link.lineNumber}**\n`;
+            result += `- **リンクテキスト**: \`${link.linkText}\`\n`;
+            result += `- **対象**: ${link.linkTarget}\n`;
+            result += `- **種類**: ${link.linkType === 'wiki' ? 'Wiki形式' : 'Markdown形式'}\n`;
+            
+            if (link.canAutoFix && link.suggestedFix) {
+              result += `- **修正候補**: ${link.suggestedFix}\n`;
+              if (auto_fix) {
+                result += `- **自動修正**: 実行予定\n`;
+              }
+            } else {
+              result += `- **修正**: 手動修正が必要\n`;
+            }
+            result += '\n';
+          });
+        });
+        
+        // Auto-fix functionality
+        if (auto_fix) {
+          let fixedCount = 0;
+          const fixableLinks = brokenLinks.filter(link => link.canAutoFix && link.suggestedFix);
+          
+          for (const link of fixableLinks) {
+            try {
+              const content = await fs.readFile(link.sourceFile, 'utf-8');
+              let newContent = content;
+              
+              if (link.linkType === 'wiki') {
+                // Fix wiki-style link
+                const oldPattern = `[[${link.linkTarget}`;
+                const newPattern = `[[${link.suggestedFix}`;
+                newContent = newContent.replace(oldPattern, newPattern);
+              } else {
+                // Fix markdown-style link
+                const oldPattern = `](${link.linkTarget}.md)`;
+                const newPattern = `](${link.suggestedFix}.md)`;
+                newContent = newContent.replace(oldPattern, newPattern);
+              }
+              
+              await fs.writeFile(link.sourceFile, newContent, 'utf-8');
+              fixedCount++;
+            } catch (error) {
+              // Skip files that can't be fixed
+            }
+          }
+          
+          result += `## 🔧 自動修正結果\n\n`;
+          result += `- **修正可能**: ${fixableLinks.length}件\n`;
+          result += `- **修正完了**: ${fixedCount}件\n`;
+          result += `- **修正失敗**: ${fixableLinks.length - fixedCount}件\n`;
+          
+          if (fixedCount > 0) {
+            result += `\n✅ ${fixedCount}件のリンクを自動修正しました。\n`;
+          }
+        }
+        
+        // Statistics
+        result += `## 📊 統計情報\n\n`;
+        const fileCount = Object.keys(groupedByFile).length;
+        const wikiLinks = brokenLinks.filter(l => l.linkType === 'wiki').length;
+        const markdownLinks = brokenLinks.filter(l => l.linkType === 'markdown').length;
+        const autoFixable = brokenLinks.filter(l => l.canAutoFix).length;
+        
+        result += `- **影響ファイル数**: ${fileCount}件\n`;
+        result += `- **Wikiリンク**: ${wikiLinks}件\n`;
+        result += `- **Markdownリンク**: ${markdownLinks}件\n`;
+        result += `- **自動修正可能**: ${autoFixable}件\n`;
+        result += `- **手動修正必要**: ${brokenLinks.length - autoFixable}件\n`;
+        
+        if (!auto_fix && autoFixable > 0) {
+          result += `\n💡 **自動修正を実行**: find_broken_links(auto_fix: true)\n`;
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `壊れたリンク検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
     }
 
     case 'create_note': {
@@ -3252,39 +5261,134 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-
-
-
-
-    ,
+    // Kanban Plugin Tools
+    case 'create_kanban_board': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Kanban plugin not initialized.',
+            },
           ],
         };
       }
 
+      const { board_name, lane_names = ['To Do', 'Doing', 'Done'], folder = '' } = args as any;
+      
       try {
-        const taskPath = args?.path as string;
-        const updates: Partial<TaskMetadata> = {};
+        const boardPath = await kanbanPlugin.createKanbanBoard(board_name, lane_names, folder);
         
-        if (args?.title) updates.title = args.title as string;
-        if (args?.priority) updates.priority = args.priority as TaskMetadata['priority'];
-        if (args?.due) updates.due = args.due as string;
-        if (args?.project) updates.project = args.project as string;
-        if (args?.assignee) updates.assignee = args.assignee as string;
-        if (args?.estimate) updates.estimate = args.estimate as number;
-        if (args?.tags) updates.tags = args.tags as string[];
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Kanban board created successfully!
+
+Board: ${board_name}
+Path: ${boardPath}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error creating Kanban board: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'add_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
+          ],
+        };
+      }
+
+      const { board_path, lane_title, title, content = '', assignee, tags = [], due_date, check_items = [] } = args as any;
+      
+      try {
+        const cardData = {
+          title,
+          content,
+          assignee,
+          tags,
+          dueDate: due_date,
+          checkItems: check_items,
+        };
+
+        const card = await kanbanPlugin.addKanbanCard(board_path, lane_title, cardData);
         
-        const success = await taskNotesPlugin.updateTaskMetadata(taskPath, updates);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ Kanbanカードが正常に追加されました！
+
+**カード詳細:**
+- ID: ${card.id}
+- タイトル: ${card.title}
+- レーン: ${lane_title}
+- 作成日: ${card.createdDate}
+${card.assignee ? `- 担当者: ${card.assignee}` : ''}
+${card.dueDate ? `- 期限: ${card.dueDate}` : ''}
+${card.tags && card.tags.length > 0 ? `- タグ: ${card.tags.join(', ')}` : ''}
+
+ボードパス: ${board_path}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ Kanbanカードの追加に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'move_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
+          ],
+        };
+      }
+
+      const { board_path, card_id, target_lane_title, position } = args as any;
+      
+      try {
+        const success = await kanbanPlugin.moveKanbanCard(board_path, card_id, target_lane_title, position);
         
         if (success) {
-          const updatesList = Object.entries(updates).map(([key, value]) => 
-            `- ${key}: ${Array.isArray(value) ? value.join(', ') : value}`
-          ).join('\n');
-
           return {
             content: [
               {
                 type: 'text',
-                text: `✅ タスクメタデータを更新しました:\n📁 ${taskPath}\n\n更新内容:\n${updatesList}`,
+                text: `✅ Kanbanカードが正常に移動されました！
+
+**移動詳細:**
+- カードID: ${card_id}
+- 移動先レーン: ${target_lane_title}
+${position !== undefined ? `- 位置: ${position}` : '- 位置: レーンの最後尾'}
+
+ボードパス: ${board_path}`,
               },
             ],
           };
@@ -3293,7 +5397,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `タスクメタデータの更新に失敗しました: ${taskPath}`,
+                text: `❌ Kanbanカードの移動に失敗しました。カードIDまたはレーンが見つかりません。`,
               },
             ],
           };
@@ -3303,30 +5407,227 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error updating task metadata: ${error}`,
+              text: `❌ Kanbanカードの移動に失敗しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    ,
+    case 'update_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
           ],
         };
       }
 
+      const { board_path, card_id, title, content, assignee, tags, due_date, check_items } = args as any;
+      
       try {
-        const taskPath = args?.path as string;
-        const description = args?.description as string;
+        const updates: any = {};
+        if (title !== undefined) updates.title = title;
+        if (content !== undefined) updates.content = content;
+        if (assignee !== undefined) updates.assignee = assignee;
+        if (tags !== undefined) updates.tags = tags;
+        if (due_date !== undefined) updates.dueDate = due_date;
+        if (check_items !== undefined) updates.checkItems = check_items;
+
+        const success = await kanbanPlugin.updateKanbanCard(board_path, card_id, updates);
         
-        const success = await taskNotesPlugin.startTaskTimer(taskPath, description);
+        if (success) {
+          const updatedFields = Object.keys(updates);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ Kanbanカードが正常に更新されました！
+
+**更新詳細:**
+- カードID: ${card_id}
+- 更新されたフィールド: ${updatedFields.join(', ')}
+
+ボードパス: ${board_path}`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `❌ Kanbanカードの更新に失敗しました。カードIDが見つかりません。`,
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ Kanbanカードの更新に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'list_kanban_boards': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const boards = await kanbanPlugin.listKanbanBoards();
+        
+        if (boards.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📋 Kanbanボード一覧
+
+ボールト内にKanbanボードが見つかりませんでした。
+
+**新しいKanbanボードを作成するには:**
+create_kanban_board(board_name: "マイボード", lane_names: ["To Do", "Doing", "Done"])`,
+              },
+            ],
+          };
+        }
+
+        const boardList = boards.map((board, index) => 
+          `${index + 1}. **${board.name}**
+   - パス: ${board.path}
+   - レーン数: ${board.laneCount}
+   - カード数: ${board.cardCount}`
+        ).join('\n\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📋 Kanbanボード一覧 (${boards.length}個のボードが見つかりました)
+
+${boardList}
+
+**ボード操作:**
+- ボード詳細を見る: get_kanban_board(board_path: "path/to/board.md")
+- カードを追加: add_kanban_card(board_path: "path", lane_title: "To Do", title: "新しいタスク")`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ Kanbanボード一覧の取得に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_kanban_board': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
+          ],
+        };
+      }
+
+      const { board_path } = args as any;
+      
+      try {
+        const boardData = await kanbanPlugin.getKanbanBoard(board_path);
+        const { board, name, path, stats } = boardData;
+
+        const laneInfo = board.lanes.map((lane, index) => 
+          `**${index + 1}. ${lane.title}** (${lane.cards.length}枚)${lane.cards.length > 0 ? '\n' + lane.cards.map((card, cardIndex) => 
+            `   ${cardIndex + 1}. ${card.title}${card.assignee ? ` [@${card.assignee}]` : ''}${card.dueDate ? ` 📅${card.dueDate}` : ''}${card.tags && card.tags.length > 0 ? ` #${card.tags.join(' #')}` : ''}`
+          ).join('\n') : ''}`
+        ).join('\n\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📋 Kanbanボード: ${name}
+
+**基本情報:**
+- パス: ${path}
+- 総カード数: ${stats.totalCards}枚
+- アーカイブ済み: ${stats.archivedCards}枚
+
+**レーン構成:**
+${laneInfo}
+
+**利用可能な操作:**
+- カード追加: add_kanban_card(board_path: "${board_path}", lane_title: "レーン名", title: "タイトル")
+- カード移動: move_kanban_card(board_path: "${board_path}", card_id: "カードID", target_lane_title: "移動先レーン")
+- カード更新: update_kanban_card(board_path: "${board_path}", card_id: "カードID", title: "新しいタイトル")`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ Kanbanボード情報の取得に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'delete_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
+          ],
+        };
+      }
+
+      const { board_path, card_id } = args as any;
+      
+      try {
+        const success = await kanbanPlugin.deleteKanbanCard(board_path, card_id);
         
         if (success) {
           return {
             content: [
               {
                 type: 'text',
-                text: `⏰ タイマーを開始しました!\n📁 ${taskPath}${description ? `\n📝 説明: ${description}` : ''}\n\n作業開始時刻: ${new Date().toLocaleString()}`,
+                text: `✅ Kanbanカードが正常に削除されました！
+
+**削除詳細:**
+- カードID: ${card_id}
+- ボードパス: ${board_path}
+
+⚠️ **注意:** この操作は取り消すことができません。
+アーカイブが必要な場合は archive_kanban_card() を使用してください。`,
               },
             ],
           };
@@ -3335,7 +5636,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `タイマーの開始に失敗しました。既にタイマーが実行中の可能性があります。\n📁 ${taskPath}`,
+                text: `❌ Kanbanカードの削除に失敗しました。指定されたカードIDが見つかりません。`,
               },
             ],
           };
@@ -3345,32 +5646,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error starting task timer: ${error}`,
+              text: `❌ Kanbanカードの削除に失敗しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    ,
+    case 'archive_kanban_card': {
+      if (!selectedVault || !kanbanPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Kanbanプラグインが初期化されていません。',
+            },
           ],
         };
       }
 
+      const { board_path, card_id } = args as any;
+      
       try {
-        const taskPath = args?.path as string;
-        const result = await taskNotesPlugin.stopTaskTimer(taskPath);
+        const success = await kanbanPlugin.archiveKanbanCard(board_path, card_id);
         
-        if (result.success && result.duration) {
-          const hours = Math.floor(result.duration / 60);
-          const minutes = result.duration % 60;
-          const timeString = hours > 0 ? `${hours}時間${minutes}分` : `${minutes}分`;
-
+        if (success) {
           return {
             content: [
               {
                 type: 'text',
-                text: `⏹️ タイマーを停止しました!\n📁 ${taskPath}\n\n⏱️ 作業時間: ${timeString}\n終了時刻: ${new Date().toLocaleString()}`,
+                text: `📦 Kanbanカードが正常にアーカイブされました！
+
+**アーカイブ詳細:**
+- カードID: ${card_id}
+- ボードパス: ${board_path}
+
+ℹ️ **アーカイブされたカードについて:**
+- カードはレーンから削除され、ボードのアーカイブセクションに移動されました
+- アーカイブされたカードはボード情報で確認できます
+- 必要に応じて後で参照することができます
+
+**アーカイブを確認するには:**
+get_kanban_board(board_path: "${board_path}")`,
               },
             ],
           };
@@ -3379,7 +5696,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: 'text',
-                text: `タイマーの停止に失敗しました。アクティブなタイマーがない可能性があります。\n📁 ${taskPath}`,
+                text: `❌ Kanbanカードのアーカイブに失敗しました。指定されたカードIDが見つかりません。`,
               },
             ],
           };
@@ -3389,410 +5706,297 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error stopping task timer: ${error}`,
+              text: `❌ Kanbanカードのアーカイブに失敗しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    ,
-          ],
-        };
-      }
-
-      try {
-        const stats = await taskNotesPlugin.getTaskStats();
-        
-        const totalHours = Math.floor(stats.totalTimeSpent / 60);
-        const totalMinutes = stats.totalTimeSpent % 60;
-        const avgHours = Math.floor(stats.averageTimePerTask / 60);
-        const avgMinutes = Math.floor(stats.averageTimePerTask % 60);
-
-        let statsText = `📊 **タスク統計**\n\n`;
-        statsText += `📝 **総タスク数:** ${stats.total}\n`;
-        statsText += `⏱️ **総作業時間:** ${totalHours}時間${totalMinutes}分\n`;
-        statsText += `📈 **平均作業時間/タスク:** ${avgHours}時間${avgMinutes}分\n`;
-        statsText += `⚠️ **期限切れタスク:** ${stats.overdueTasks}件\n\n`;
-
-        statsText += `**ステータス別:**\n`;
-        Object.entries(stats.byStatus).forEach(([status, count]) => {
-          const icon = {
-            'todo': '⭕',
-            'in-progress': '🔄',
-            'waiting': '⏳',
-            'done': '✅',
-            'cancelled': '❌'
-          }[status] || '📝';
-          statsText += `- ${icon} ${status}: ${count}件\n`;
-        });
-
-        statsText += `\n**優先度別:**\n`;
-        Object.entries(stats.byPriority).forEach(([priority, count]) => {
-          const icon = {
-            'low': '🔵',
-            'medium': '🟡',
-            'high': '🟠',
-            'urgent': '🔴'
-          }[priority] || '⚪';
-          statsText += `- ${icon} ${priority}: ${count}件\n`;
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: statsText,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error getting task stats: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    ,
-          ],
-        };
-      }
-
-      try {
-        const overdueTasks = await taskNotesPlugin.getOverdueTasks();
-        
-        if (overdueTasks.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: '🎉 期限切れのタスクはありません！',
-              },
-            ],
-          };
-        }
-
-        const taskList = overdueTasks.map(task => {
-          const daysDue = Math.floor((new Date().getTime() - new Date(task.metadata.due!).getTime()) / (1000 * 60 * 60 * 24));
-          const priorityIcon = {
-            'low': '🔵',
-            'medium': '🟡',
-            'high': '🟠',
-            'urgent': '🔴'
-          }[task.metadata.priority];
-
-          return `⚠️ **${task.metadata.title}** ${priorityIcon}\n  📅 期限: ${task.metadata.due} (${daysDue}日経過)\n  📁 ${task.filePath}${task.metadata.project ? `\n  📋 プロジェクト: ${task.metadata.project}` : ''}`;
-        }).join('\n\n');
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `⚠️ **期限切れタスク** (${overdueTasks.length}件)\n\n${taskList}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error getting overdue tasks: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    ,
-          ],
-        };
-      }
-
-      try {
-        const tasksByProject = await taskNotesPlugin.getTasksByProject();
-        
-        if (Object.keys(tasksByProject).length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: '📝 プロジェクトタスクが見つかりません。',
-              },
-            ],
-          };
-        }
-
-        let projectsText = '📋 **プロジェクト別タスク**\n\n';
-        
-        Object.entries(tasksByProject).forEach(([project, tasks]) => {
-          const completedTasks = tasks.filter(t => t.metadata.status === 'done').length;
-          const totalTasks = tasks.length;
-          const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-          
-          projectsText += `## 📂 ${project} (${completedTasks}/${totalTasks} - ${progress}%)\n\n`;
-          
-          tasks.forEach(task => {
-            const statusIcon = {
-              'todo': '⭕',
-              'in-progress': '🔄',
-              'waiting': '⏳',
-              'done': '✅',
-              'cancelled': '❌'
-            }[task.metadata.status];
-
-            const priorityIcon = {
-              'low': '🔵',
-              'medium': '🟡',
-              'high': '🟠',
-              'urgent': '🔴'
-            }[task.metadata.priority];
-
-            projectsText += `${statusIcon} ${task.metadata.title} ${priorityIcon}${task.metadata.due ? ` 📅 ${task.metadata.due}` : ''}\n`;
-          });
-          
-          projectsText += '\n';
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: projectsText,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error getting tasks by project: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'create_daily_note': {
+    case 'get_backlinks': {
       if (!selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
-      if (!templaterPlugin) {
+      const { note_name } = args as any;
+      
+      try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const backlinks: string[] = [];
+        
+        // Scan all markdown files in vault for links to the target note
+        async function scanDirectory(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await scanDirectory(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const content = await fs.readFile(fullPath, 'utf-8');
+              
+              // Check for wiki-style links [[note_name]] or markdown links [text](note_name.md)
+              const wikiLinks = content.match(/\[\[([^\]]+)\]\]/g) || [];
+              const mdLinks = content.match(/\[([^\]]+)\]\(([^)]+)\.md\)/g) || [];
+              
+              const hasWikiLink = wikiLinks.some(link => 
+                link.slice(2, -2).trim() === note_name
+              );
+              const hasMdLink = mdLinks.some(link => 
+                link.includes(`(${note_name}.md)`)
+              );
+              
+              if (hasWikiLink || hasMdLink) {
+                const relativePath = path.relative(selectedVault, fullPath);
+                backlinks.push(relativePath);
+              }
+            }
+          }
+        }
+        
+        await scanDirectory(selectedVault);
+        
         return {
           content: [
             {
               type: 'text',
-              text: 'Templater plugin not available.',
+              text: `Backlinks for "${note_name}":\n\n${backlinks.length === 0 ? 'No backlinks found.' : backlinks.map(link => `- ${link}`).join('\n')}`,
             },
           ],
         };
-      }
-
-      try {
-        const { 
-          date = new Date().toISOString().split('T')[0],
-          template_name,
-          use_template = true,
-          create_new_template = false,
-          confirm = false
-        } = args as any;
-
-        // User confirmation required for daily note creation
-        if (!confirm) {
-          const dailyNotePath = `Daily Notes/${date}.md`;
-          const fullTargetPath = path.join(selectedVault, dailyNotePath);
-          const dailyNotesFolder = path.join(selectedVault, 'Daily Notes');
-          
-          // Check if Daily Notes folder exists
-          let folderStatus = '';
-          try {
-            await fs.access(dailyNotesFolder);
-            folderStatus = '✅ 既存フォルダ';
-          } catch {
-            folderStatus = '🆕 新規フォルダ（作成されます）';
-          }
-          
-          // Check if daily note already exists
-          let fileStatus = '';
-          try {
-            await fs.access(fullTargetPath);
-            fileStatus = '⚠️ **既存のデイリーノートを上書きします**';
-          } catch {
-            fileStatus = '🆕 新規デイリーノート';
-          }
-          
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `📅 デイリーノート作成の確認\n\n**作成するデイリーノート:**\n- 日付: ${date}\n- 相対パス: ${dailyNotePath}\n- 絶対パス: ${fullTargetPath}\n- テンプレート使用: ${use_template ? 'はい' : 'いいえ'}${template_name ? `\n- テンプレート: ${template_name}` : ''}\n\n**保存先フォルダ詳細:**\n- フォルダ: Daily Notes\n- 状態: ${folderStatus}\n\n**ファイル状態:**\n- ${fileStatus}\n\n**確認事項:**\n${fileStatus.includes('上書き') ? '- 既存のデイリーノートが上書きされます\n' : ''}${folderStatus.includes('新規') ? '- Daily Notesフォルダが新規作成されます\n' : ''}\n本当にこの場所にデイリーノートを作成しますか？\n\n✅ **作成する**: create_daily_note(date: "${date}"${template_name ? `, template_name: "${template_name}"` : ''}, confirm: true)\n❌ **キャンセル**: 操作をキャンセルします`,
-              },
-            ],
-          };
-        }
-
-        // Template selection confirmation process
-        let selectedTemplate = template_name;
-        let templateContent = '';
-
-        if (use_template) {
-          if (!selectedTemplate && !create_new_template) {
-            // List available templates and ask user to select
-            const templates = await templaterPlugin.listTemplates();
-            
-            if (templates.length === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: 'No templates found. Would you like to create a new daily note template?\n\nOptions:\n1. Create a new template (set create_new_template: true)\n2. Continue without template (set use_template: false)',
-                  },
-                ],
-              };
-            }
-
-            const templateList = templates.map((t, i) => `${i + 1}. ${t.name} - ${t.description || 'No description'}`).join('\n');
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `Please select a template for the daily note:\n\n${templateList}\n\nUse template_name parameter to specify the template, or set create_new_template: true to create a new one.`,
-                },
-              ],
-            };
-          }
-
-          if (create_new_template) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: 'Please provide the template content and specify the template_folder parameter for where to save it, or it will be saved to the default Templates folder.',
-                },
-              ],
-            };
-          }
-
-          if (selectedTemplate) {
-            // Load the selected template
-            const templates = await templaterPlugin.listTemplates();
-            const template = templates.find(t => t.name === selectedTemplate);
-            
-            if (!template) {
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: `Template '${selectedTemplate}' not found. Available templates: ${templates.map(t => t.name).join(', ')}`,
-                  },
-                ],
-              };
-            }
-            
-            // Read template content from file
-            const templatePath = path.join(selectedVault!, 'Templates', template.path);
-            try {
-              templateContent = await fs.readFile(templatePath, 'utf-8');
-            } catch (error) {
-              templateContent = `# ${template.name}\n\nTemplate content could not be loaded.`;
-            }
-          }
-        }
-
-        // Create the daily note
-        const dailyNoteName = `Daily Note - ${date}.md`;
-        const dailyNotePath = path.join(selectedVault, dailyNoteName);
-        
-        let finalContent = templateContent;
-        if (!finalContent) {
-          finalContent = `# Daily Note - ${date}\n\n## Goals\n- [ ] \n\n## Notes\n\n## Reflection\n`;
-        }
-        
-        let result;
-        try {
-          await fs.writeFile(dailyNotePath, finalContent, 'utf-8');
-          result = { success: true, notePath: dailyNoteName };
-        } catch (error) {
-          result = { success: false, error: String(error) };
-        }
-        
-        if (result.success) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `✅ Daily note created successfully!\n\nFile: ${result.notePath}\nDate: ${date}\nTemplate used: ${selectedTemplate || 'None'}`,
-              },
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Failed to create daily note: ${result.error}`,
-              },
-            ],
-          };
-        }
       } catch (error) {
         return {
           content: [
             {
               type: 'text',
-              text: `Error creating daily note: ${error}`,
+              text: `Error finding backlinks: ${error}`,
             },
           ],
         };
       }
     }
 
+    case 'get_note_info': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected.',
+            },
+          ],
+        };
+      }
+
+      const { note_path } = args as any;
+      
+      try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const fullPath = path.join(selectedVault, note_path);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        const stats = await fs.stat(fullPath);
+        
+        // Extract frontmatter
+        let frontmatter = {};
+        const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+        if (frontmatterMatch) {
+          try {
+            const yaml = await import('js-yaml');
+            frontmatter = yaml.load(frontmatterMatch[1]) as any;
+          } catch {}
+        }
+        
+        // Extract links
+        const wikiLinks = content.match(/\[\[([^\]]+)\]\]/g) || [];
+        const mdLinks = content.match(/\[([^\]]+)\]\(([^)]+)\.md\)/g) || [];
+        
+        // Extract tags
+        const tags = content.match(/#[\w-]+/g) || [];
+        
+        // Count words
+        const wordCount = content.replace(/---[\s\S]*?---/, '').trim().split(/\s+/).length;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Note Information: ${note_path}\n\n` +
+                   `Created: ${stats.birthtime.toISOString()}\n` +
+                   `Modified: ${stats.mtime.toISOString()}\n` +
+                   `Size: ${stats.size} bytes\n` +
+                   `Word Count: ${wordCount}\n` +
+                   `Tags: ${tags.length === 0 ? 'None' : tags.join(', ')}\n` +
+                   `Wiki Links: ${wikiLinks.length}\n` +
+                   `Markdown Links: ${mdLinks.length}\n` +
+                   `Frontmatter: ${Object.keys(frontmatter).length > 0 ? JSON.stringify(frontmatter, null, 2) : 'None'}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error getting note info: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'create_folder': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected.',
+            },
+          ],
+        };
+      }
+
+      const { folder_path, confirm = false } = args as any;
+      
+      // User confirmation required for folder creation
+      if (!confirm) {
+        const path = await import('path');
+        const fs = await import('fs/promises');
+        
+        const fullFolderPath = path.join(selectedVault, folder_path);
+        
+        // Check if folder already exists
+        let folderStatus = '';
+        try {
+          await fs.access(fullFolderPath);
+          folderStatus = '⚠️ **フォルダが既に存在します**';
+        } catch {
+          folderStatus = '🆕 新規フォルダ';
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📁 フォルダ作成の確認\n\n` +
+                   `**作成するフォルダ:**\n` +
+                   `- フォルダパス: ${folder_path}\n` +
+                   `- 絶対パス: ${fullFolderPath}\n\n` +
+                   `**フォルダ状態:**\n` +
+                   `- ${folderStatus}\n\n` +
+                   `本当にこのフォルダを作成しますか？\n\n` +
+                   `✅ **作成する**: create_folder(folder_path: "${folder_path}", confirm: true)\n` +
+                   `❌ **キャンセル**: 操作をキャンセルします`,
+            },
+          ],
+        };
+      }
+
+      try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const fullFolderPath = path.join(selectedVault, folder_path);
+        await fs.mkdir(fullFolderPath, { recursive: true });
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ Folder created successfully!\n\nPath: ${fullFolderPath}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error creating folder: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    // Vault Analytics Functions
     case 'analyze_vault_structure': {
       if (!selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
-            },
-          ],
-        };
-      }
-
-      if (!vaultAnalyticsPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Vault Analytics plugin not available.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
       try {
-        const { include_file_details = false } = args as any;
-        const structure = await vaultAnalyticsPlugin.analyzeVaultStructure();
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        let totalFiles = 0;
+        let totalFolders = 0;
+        let totalSize = 0;
+        const folderStats: { [key: string]: { files: number; size: number } } = {};
+        
+        async function analyzeDirectory(dirPath: string, relativePath: string = '') {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            const currentRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              totalFolders++;
+              folderStats[currentRelPath] = { files: 0, size: 0 };
+              await analyzeDirectory(fullPath, currentRelPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              totalFiles++;
+              const stats = await fs.stat(fullPath);
+              totalSize += stats.size;
+              
+              const folderKey = relativePath || 'root';
+              if (!folderStats[folderKey]) {
+                folderStats[folderKey] = { files: 0, size: 0 };
+              }
+              folderStats[folderKey].files++;
+              folderStats[folderKey].size += stats.size;
+            }
+          }
+        }
+        
+        await analyzeDirectory(selectedVault);
+        
+        const folderReport = Object.entries(folderStats)
+          .sort((a, b) => b[1].files - a[1].files)
+          .map(([folder, stats]) => 
+            `📁 ${folder}: ${stats.files} files (${(stats.size / 1024).toFixed(1)} KB)`
+          ).join('\n');
         
         return {
           content: [
             {
               type: 'text',
-              text: `📁 **Vault Structure Analysis**\n\n**Analysis Results:**\n${(structure as any)?.name ? `Vault: ${(structure as any).name}` : 'Structure analyzed'}\n${(structure as any)?.fileCount ? `Files: ${(structure as any).fileCount}` : 'File count unavailable'}\n${(structure as any)?.size ? `Size: ${((structure as any).size / 1024).toFixed(1)} KB` : 'Size calculation unavailable'}\n\n**Analysis:** Complete vault structure scan performed`,
+              text: `📊 Vault Structure Analysis\n\n` +
+                   `**Overview:**\n` +
+                   `- Total Notes: ${totalFiles}\n` +
+                   `- Total Folders: ${totalFolders}\n` +
+                   `- Total Size: ${(totalSize / 1024).toFixed(1)} KB\n\n` +
+                   `**Folder Breakdown:**\n${folderReport}`,
             },
           ],
         };
@@ -3814,32 +6018,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
-            },
-          ],
-        };
-      }
-
-      if (!vaultAnalyticsPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Vault Analytics plugin not available.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
       try {
-        const { days = 30 } = args as any;
-        const stats = await vaultAnalyticsPlugin.getWritingStats();
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        let totalWords = 0;
+        let totalChars = 0;
+        let totalNotes = 0;
+        const dailyStats: { [date: string]: { words: number; notes: number } } = {};
+        
+        async function analyzeWritingStats(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await analyzeWritingStats(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const content = await fs.readFile(fullPath, 'utf-8');
+              const stats = await fs.stat(fullPath);
+              
+              // Remove frontmatter for word count
+              const cleanContent = content.replace(/^---[\s\S]*?---/m, '').trim();
+              const words = cleanContent.split(/\s+/).length;
+              const chars = cleanContent.length;
+              
+              totalWords += words;
+              totalChars += chars;
+              totalNotes++;
+              
+              // Track daily stats by modification date
+              const date = stats.mtime.toISOString().split('T')[0];
+              if (!dailyStats[date]) {
+                dailyStats[date] = { words: 0, notes: 0 };
+              }
+              dailyStats[date].words += words;
+              dailyStats[date].notes++;
+            }
+          }
+        }
+        
+        await analyzeWritingStats(selectedVault);
+        
+        const avgWordsPerNote = totalNotes > 0 ? Math.round(totalWords / totalNotes) : 0;
+        const recentDays = Object.entries(dailyStats)
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .slice(0, 7)
+          .map(([date, stats]) => 
+            `${date}: ${stats.words} words (${stats.notes} notes)`
+          ).join('\n');
         
         return {
           content: [
             {
               type: 'text',
-              text: `📊 **Writing Statistics**\n\n**Statistics:**\n**Total Notes:** ${stats?.totalNotes || 'N/A'}\n**Total Words:** ${stats?.totalWords?.toLocaleString() || 'N/A'}\n**Total Characters:** ${stats?.totalCharacters?.toLocaleString() || 'N/A'}\n**Average Words per Note:** ${stats?.averageWordsPerNote || 'N/A'}\n\n**Analysis:** Writing statistics calculated from vault content`,
+              text: `📝 Writing Statistics\n\n` +
+                   `**Overall Stats:**\n` +
+                   `- Total Notes: ${totalNotes}\n` +
+                   `- Total Words: ${totalWords.toLocaleString()}\n` +
+                   `- Total Characters: ${totalChars.toLocaleString()}\n` +
+                   `- Average Words per Note: ${avgWordsPerNote}\n\n` +
+                   `**Recent Activity (Last 7 Days):**\n${recentDays}`,
             },
           ],
         };
@@ -3861,43 +6107,91 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
-            },
-          ],
-        };
-      }
-
-      if (!vaultAnalyticsPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Vault Analytics plugin not available.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
       try {
-        const { exclude_folders = [] } = args as any;
-        const orphans = await vaultAnalyticsPlugin.findOrphanNotes();
+        const fs = await import('fs/promises');
+        const path = await import('path');
         
-        if (orphans.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: '✅ No orphan notes found! All notes are properly linked.',
-              },
-            ],
-          };
+        const allNotes: string[] = [];
+        const linkedNotes = new Set<string>();
+        
+        // First pass: collect all notes
+        async function collectNotes(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await collectNotes(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const relativePath = path.relative(selectedVault, fullPath);
+              allNotes.push(relativePath);
+            }
+          }
         }
-
+        
+        // Second pass: find all links
+        async function findLinks(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await findLinks(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const content = await fs.readFile(fullPath, 'utf-8');
+              
+              // Find wiki-style links [[note_name]]
+              const wikiLinks = content.match(/\[\[([^\]]+)\]\]/g) || [];
+              wikiLinks.forEach(link => {
+                const noteName = link.slice(2, -2).trim();
+                // Try to match with actual files
+                const matchingNote = allNotes.find(note => 
+                  path.basename(note, '.md') === noteName || note === noteName
+                );
+                if (matchingNote) {
+                  linkedNotes.add(matchingNote);
+                }
+              });
+              
+              // Find markdown links [text](file.md)
+              const mdLinks = content.match(/\[([^\]]+)\]\(([^)]+)\.md\)/g) || [];
+              mdLinks.forEach(link => {
+                const match = link.match(/\[([^\]]+)\]\(([^)]+)\.md\)/);
+                if (match) {
+                  const linkedFile = match[2] + '.md';
+                  const matchingNote = allNotes.find(note => note === linkedFile);
+                  if (matchingNote) {
+                    linkedNotes.add(matchingNote);
+                  }
+                }
+              });
+            }
+          }
+        }
+        
+        await collectNotes(selectedVault);
+        await findLinks(selectedVault);
+        
+        const orphanNotes = allNotes.filter(note => !linkedNotes.has(note));
+        
         return {
           content: [
             {
               type: 'text',
-              text: `🔍 **Found ${orphans.length} Orphan Notes**\n\n${orphans.map((o: any) => `- **${o.name || 'Unknown'}**\n  Path: ${o.path || 'Unknown path'}\n  Size: ${o.size || 0} bytes\n  Modified: ${o.modified || 'Unknown'}\n`).join('\n')}`,
+              text: `🔍 Orphan Notes Analysis\n\n` +
+                   `**Summary:**\n` +
+                   `- Total Notes: ${allNotes.length}\n` +
+                   `- Linked Notes: ${linkedNotes.size}\n` +
+                   `- Orphan Notes: ${orphanNotes.length}\n\n` +
+                   `**Orphan Notes:**\n${orphanNotes.length === 0 ? 'No orphan notes found!' : orphanNotes.map(note => `- ${note}`).join('\n')}`,
             },
           ],
         };
@@ -3919,32 +6213,101 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
-            },
-          ],
-        };
-      }
-
-      if (!vaultAnalyticsPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Vault Analytics plugin not available.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
       try {
-        const { max_depth = 3, include_external = false } = args as any;
-        const graph = await vaultAnalyticsPlugin.getLinkGraph();
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const linkGraph: { [note: string]: string[] } = {};
+        const allNotes: string[] = [];
+        
+        // First pass: collect all notes
+        async function collectNotes(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await collectNotes(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const relativePath = path.relative(selectedVault, fullPath);
+              allNotes.push(relativePath);
+              linkGraph[relativePath] = [];
+            }
+          }
+        }
+        
+        // Second pass: build link graph
+        async function buildLinkGraph(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await buildLinkGraph(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const relativePath = path.relative(selectedVault, fullPath);
+              const content = await fs.readFile(fullPath, 'utf-8');
+              
+              // Find all links from this note
+              const wikiLinks = content.match(/\[\[([^\]]+)\]\]/g) || [];
+              const mdLinks = content.match(/\[([^\]]+)\]\(([^)]+)\.md\)/g) || [];
+              
+              wikiLinks.forEach(link => {
+                const noteName = link.slice(2, -2).trim();
+                const matchingNote = allNotes.find(note => 
+                  path.basename(note, '.md') === noteName || note === noteName
+                );
+                if (matchingNote && matchingNote !== relativePath) {
+                  linkGraph[relativePath].push(matchingNote);
+                }
+              });
+              
+              mdLinks.forEach(link => {
+                const match = link.match(/\[([^\]]+)\]\(([^)]+)\.md\)/);
+                if (match) {
+                  const linkedFile = match[2] + '.md';
+                  const matchingNote = allNotes.find(note => note === linkedFile);
+                  if (matchingNote && matchingNote !== relativePath) {
+                    linkGraph[relativePath].push(matchingNote);
+                  }
+                }
+              });
+            }
+          }
+        }
+        
+        await collectNotes(selectedVault);
+        await buildLinkGraph(selectedVault);
+        
+        // Calculate some graph metrics
+        const totalLinks = Object.values(linkGraph).reduce((sum, links) => sum + links.length, 0);
+        const avgLinksPerNote = allNotes.length > 0 ? (totalLinks / allNotes.length).toFixed(1) : '0';
+        
+        const topConnectedNotes = Object.entries(linkGraph)
+          .filter(([_, links]) => links.length > 0)
+          .sort((a, b) => b[1].length - a[1].length)
+          .slice(0, 10)
+          .map(([note, links]) => `${note}: ${links.length} links`)
+          .join('\n');
         
         return {
           content: [
             {
               type: 'text',
-              text: `🔗 **Link Graph Analysis**\n\n**Analysis Results:**\n**Nodes:** ${(graph as any)?.nodes?.length || 0}\n**Connections:** ${(graph as any)?.connections?.length || 0}\n**Network Density:** ${(graph as any)?.density?.toFixed(3) || 'N/A'}\n\n**Analysis:** Link relationship graph generated from vault structure`,
+              text: `🕸️ Link Graph Analysis\n\n` +
+                   `**Graph Metrics:**\n` +
+                   `- Total Notes: ${allNotes.length}\n` +
+                   `- Total Links: ${totalLinks}\n` +
+                   `- Average Links per Note: ${avgLinksPerNote}\n\n` +
+                   `**Most Connected Notes:**\n${topConnectedNotes || 'No connected notes found.'}`,
             },
           ],
         };
@@ -3960,50 +6323,86 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    // AI Analysis Functions
     case 'summarize_note': {
       if (!selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
-      if (!aiAnalysisPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'AI Analysis plugin not available.',
-            },
-          ],
-        };
-      }
-
+      const { note_path } = args as any;
+      
       try {
-        const { note_path, max_length = 200 } = args as any;
+        const fs = await import('fs/promises');
+        const path = await import('path');
         
-        if (!note_path) {
+        const fullPath = path.join(selectedVault, note_path);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        
+        // Remove frontmatter for analysis
+        const cleanContent = content.replace(/^---[\s\S]*?---/m, '').trim();
+        
+        if (!cleanContent) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Please provide note_path parameter.',
+                text: 'Note is empty or contains only frontmatter.',
               },
             ],
           };
         }
-
-        const summary = await aiAnalysisPlugin.summarizeNote(note_path);
+        
+        // Simple extractive summarization
+        const sentences = cleanContent.split(/[.!?]+/).filter(s => s.trim().length > 20);
+        const paragraphs = cleanContent.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+        
+        // Extract headers
+        const headers = cleanContent.match(/^#{1,6}\s+(.+)$/gm) || [];
+        
+        // Key statistics
+        const wordCount = cleanContent.split(/\s+/).length;
+        const charCount = cleanContent.length;
+        
+        // Simple keyword extraction
+        const words = cleanContent.toLowerCase()
+          .replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(word => word.length > 3 && !['that', 'this', 'with', 'from', 'they', 'have', 'will', 'been', 'were', 'said', 'each', 'which', 'their', 'time', 'more', 'very', 'when', 'come', 'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take', 'than', 'them', 'well', 'what', 'where', 'year'].includes(word));
+        
+        const wordFreq: { [key: string]: number } = {};
+        words.forEach(word => {
+          wordFreq[word] = (wordFreq[word] || 0) + 1;
+        });
+        
+        const topKeywords = Object.entries(wordFreq)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([word, freq]) => `${word} (${freq})`)
+          .join(', ');
+        
+        // Extract first few sentences as summary
+        const summary = sentences.slice(0, 3).join('. ') + '.';
         
         return {
           content: [
             {
               type: 'text',
-              text: `📝 **Note Summary**\n\n**File:** ${note_path}\n\n**Summary:**\n${summary?.summary || 'Unable to generate summary'}\n\n**Key Points:**\n${summary?.keyPoints?.map((p: string) => `• ${p}`).join('\n') || 'No key points identified'}\n\n**Analysis:** Generated using heuristic content analysis`,
+              text: `📄 Note Summary: ${note_path}\n\n` +
+                   `**Quick Summary:**\n${summary}\n\n` +
+                   `**Statistics:**\n` +
+                   `- Word Count: ${wordCount}\n` +
+                   `- Character Count: ${charCount}\n` +
+                   `- Paragraphs: ${paragraphs.length}\n` +
+                   `- Headers: ${headers.length}\n\n` +
+                   `**Structure:**\n${headers.length > 0 ? headers.map(h => `- ${h}`).join('\n') : 'No headers found'}\n\n` +
+                   `**Top Keywords:**\n${topKeywords || 'No keywords found'}`,
             },
           ],
         };
@@ -4025,59 +6424,89 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
-      if (!aiAnalysisPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'AI Analysis plugin not available.',
-            },
-          ],
-        };
-      }
-
+      const { note_path } = args as any;
+      
       try {
-        const { note_path, max_levels = 3 } = args as any;
+        const fs = await import('fs/promises');
+        const path = await import('path');
         
-        if (!note_path) {
+        const fullPath = path.join(selectedVault, note_path);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        
+        // Remove frontmatter for analysis
+        const cleanContent = content.replace(/^---[\s\S]*?---/m, '').trim();
+        
+        if (!cleanContent) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Please provide note_path parameter.',
+                text: 'Note is empty or contains only frontmatter.',
               },
             ],
           };
         }
-
-        const outline = await aiAnalysisPlugin.generateNoteOutline(note_path);
         
-        const formatOutline = (sections: any[], level = 0) => {
-          return sections.map(section => {
-            const indent = '  '.repeat(level);
-            const prefix = level === 0 ? '#'.repeat(level + 1) : '-';
-            let result = `${indent}${prefix} ${section.title}`;
-            if (section.summary) {
-              result += `\n${indent}  ${section.summary}`;
-            }
-            if (section.subsections && section.subsections.length > 0) {
-              result += '\n' + formatOutline(section.subsections, level + 1);
-            }
-            return result;
-          }).join('\n\n');
-        };
-
+        // Extract existing headers with hierarchy
+        const headerMatches = [...cleanContent.matchAll(/^(#{1,6})\s+(.+)$/gm)];
+        const headers = headerMatches.map(match => ({
+          level: match[1].length,
+          text: match[2].trim(),
+          line: content.substring(0, match.index).split('\n').length
+        }));
+        
+        if (headers.length === 0) {
+          // Generate outline from paragraphs if no headers exist
+          const paragraphs = cleanContent.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+          const outline = paragraphs.slice(0, 10).map((para, index) => {
+            const firstSentence = para.split(/[.!?]/)[0].trim();
+            return `${index + 1}. ${firstSentence.length > 80 ? firstSentence.substring(0, 80) + '...' : firstSentence}`;
+          }).join('\n');
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📋 Generated Outline: ${note_path}\n\n` +
+                     `**Auto-Generated from Content:**\n${outline}\n\n` +
+                     `**Recommendation:** Consider adding headers to improve document structure.`,
+              },
+            ],
+          };
+        }
+        
+        // Create hierarchical outline from existing headers
+        const outline = headers.map(header => {
+          const indent = '  '.repeat(header.level - 1);
+          return `${indent}- ${header.text} (Line ${header.line})`;
+        }).join('\n');
+        
+        // Analyze outline structure
+        const levelCounts = headers.reduce((acc, h) => {
+          acc[h.level] = (acc[h.level] || 0) + 1;
+          return acc;
+        }, {} as { [level: number]: number });
+        
+        const structureAnalysis = Object.entries(levelCounts)
+          .map(([level, count]) => `H${level}: ${count}`)
+          .join(', ');
+        
         return {
           content: [
             {
               type: 'text',
-              text: `📋 **Note Outline**\n\n**File:** ${note_path}\n\n**Outline:**\n\n${(outline as any)?.sections ? formatOutline((outline as any).sections) : 'Unable to generate outline'}\n\n**Analysis:** Generated using content structure analysis`,
+              text: `📋 Note Outline: ${note_path}\n\n` +
+                   `**Document Structure:**\n${outline}\n\n` +
+                   `**Header Analysis:**\n` +
+                   `- Total Headers: ${headers.length}\n` +
+                   `- Distribution: ${structureAnalysis}\n` +
+                   `- Deepest Level: H${Math.max(...headers.map(h => h.level))}`,
             },
           ],
         };
@@ -4099,62 +6528,203 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'No vault selected.',
             },
           ],
         };
       }
 
-      if (!aiAnalysisPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'AI Analysis plugin not available.',
-            },
-          ],
-        };
-      }
-
+      const { note_path } = args as any;
+      
       try {
-        const { note_path, max_tags = 10, min_confidence = 0.5 } = args as any;
+        const fs = await import('fs/promises');
+        const path = await import('path');
         
-        if (!note_path) {
+        const fullPath = path.join(selectedVault, note_path);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        
+        // Extract existing tags
+        const existingTags = content.match(/#[\w-]+/g) || [];
+        const existingTagsSet = new Set(existingTags.map(tag => tag.slice(1)));
+        
+        // Remove frontmatter and existing tags for analysis
+        const cleanContent = content
+          .replace(/^---[\s\S]*?---/m, '')
+          .replace(/#[\w-]+/g, '')
+          .trim();
+        
+        if (!cleanContent) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Please provide note_path parameter.',
+              text: `Existing tags: ${existingTags.join(', ') || 'None'}\n\nNote is empty or contains only frontmatter and tags.`,
+            },
+          ],
+        };
+      }
+      
+      // Extract potential tags from content
+      const words = cleanContent.toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 2 && word.length < 20);
+      
+      // Count word frequency
+      const wordFreq: { [key: string]: number } = {};
+      words.forEach(word => {
+        if (!['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'who', 'boy', 'did', 'she', 'use', 'way', 'way', 'who', 'oil', 'sit', 'set', 'run', 'eat', 'far', 'sea', 'eye', 'ask', 'try'].includes(word)) {
+          wordFreq[word] = (wordFreq[word] || 0) + 1;
+        }
+      });
+      
+      // Extract headers as potential tags
+      const headers = cleanContent.match(/^#{1,6}\s+(.+)$/gm) || [];
+      const headerWords = headers.flatMap(header => 
+        header.replace(/^#+\s+/, '').toLowerCase().split(/\s+/)
+      ).filter(word => word.length > 2);
+      
+      headerWords.forEach(word => {
+        wordFreq[word] = (wordFreq[word] || 0) + 2; // Headers get extra weight
+      });
+      
+      // Get top candidates
+      const candidates = Object.entries(wordFreq)
+        .filter(([word, freq]) => freq >= 2 && !existingTagsSet.has(word))
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15);
+      
+      // Categorize suggestions
+      const topicWords = candidates.filter(([word]) => 
+        ['project', 'work', 'study', 'research', 'meeting', 'plan', 'idea', 'note', 'draft', 'review'].some(topic => word.includes(topic))
+      );
+      
+      const actionWords = candidates.filter(([word]) => 
+        ['todo', 'task', 'action', 'follow', 'check', 'update', 'create', 'build', 'design', 'analyze'].some(action => word.includes(action))
+      );
+      
+      const generalWords = candidates.filter(([word]) => 
+        !topicWords.some(([tw]) => tw === word) && !actionWords.some(([aw]) => aw === word)
+      );
+      
+      const suggestions = [
+        ...topicWords.slice(0, 5),
+        ...actionWords.slice(0, 3),
+        ...generalWords.slice(0, 7)
+      ].slice(0, 10);
+      
+      // Scan vault for similar tags
+      let vaultTags: string[] = [];
+      try {
+        async function scanForTags(dirPath: string) {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const entryPath = path.join(dirPath, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              await scanForTags(entryPath);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              const fileContent = await fs.readFile(entryPath, 'utf-8');
+              const fileTags = fileContent.match(/#[\w-]+/g) || [];
+              vaultTags.push(...fileTags.map(tag => tag.slice(1)));
+            }
+          }
+        }
+        
+        await scanForTags(selectedVault);
+        vaultTags = [...new Set(vaultTags)]; // Remove duplicates
+      } catch (error) {
+        // Continue without vault tags if scan fails
+      }
+      
+      // Find similar existing tags
+      const similarTags = suggestions.flatMap(([word]) =>
+        vaultTags.filter(tag => 
+          tag.includes(word) || word.includes(tag) || 
+          (tag.length > 3 && word.length > 3 && 
+           (tag.substring(0, 3) === word.substring(0, 3) || 
+            tag.substring(-3) === word.substring(-3)))
+        )
+      ).slice(0, 5);
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `🏷️ Tag Suggestions for: ${note_path}\n\n` +
+                 `**Current Tags:**\n${existingTags.join(', ') || 'None'}\n\n` +
+                 `**Suggested New Tags:**\n${suggestions.map(([word, freq]) => `#${word} (${freq} occurrences)`).join('\n')}\n\n` +
+                 `**Similar Existing Tags in Vault:**\n${similarTags.length > 0 ? similarTags.map(tag => `#${tag}`).join(', ') : 'None found'}\n\n` +
+                 `**Total Tags in Vault:** ${vaultTags.length}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error suggesting tags: ${error}`,
+          },
+        ],
+      };
+    }
+  }
+
+    // Additional Book Search Functions
+    case 'search_book_by_author': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+
+      const { author } = args as any;
+      
+      try {
+        const results = await bookSearchPlugin.searchByAuthor(author);
+        lastBookSearchResults = results;
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📚 著者検索結果: "${author}"
+
+該当する書籍が見つかりませんでした。
+
+**検索のヒント:**
+- 著者名の一部でも検索できます
+- 英語名と日本語名の両方を試してみてください
+- スペルを確認してください`,
               },
             ],
           };
         }
 
-        const suggestions = await aiAnalysisPlugin.suggestTags(note_path);
-        
-        const formatTagsByCategory = (tags: any[]) => {
-          const categories = tags.reduce((acc, tag) => {
-            if (!acc[tag.category]) {
-              acc[tag.category] = [];
-            }
-            acc[tag.category].push(tag);
-            return acc;
-          }, {});
-
-          return Object.entries(categories).map(([category, categoryTags]: [string, any[]]) => {
-            const tagList = categoryTags
-              .sort((a, b) => b.confidence - a.confidence)
-              .map(tag => `  • #${tag.tag} (${(tag.confidence * 100).toFixed(0)}%)`)
-              .join('\n');
-            return `**${category.charAt(0).toUpperCase() + category.slice(1)}:**\n${tagList}`;
-          }).join('\n\n');
-        };
+        const resultList = results.map((book, index) => 
+          `**${index + 1}. ${book.title}** by ${book.author.join(', ')}\n` +
+          `   出版年: ${book.publishedDate || 'N/A'}\n` +
+          `   ${book.description ? book.description.substring(0, 150) + '...' : 'No description available'}\n`
+        ).join('\n');
 
         return {
           content: [
             {
               type: 'text',
-              text: `🏷️ **Tag Suggestions**\n\n**File:** ${note_path}\n\n**Suggested Tags:**\n\n${Array.isArray(suggestions) && suggestions.length > 0 ? suggestions.slice(0, 10).map((t: any) => `• #${t.tag || 'unknown'} (${t.category || 'general'})`).join('\n') : 'No tag suggestions available'}\n\n**Analysis:** Generated using content analysis`,
+              text: `📚 著者検索結果: "${author}" (${results.length}件)
+
+${resultList}
+
+**書籍ノート作成:**
+create_book_note(option_number: X) でノートを作成できます`,
             },
           ],
         };
@@ -4163,138 +6733,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error suggesting tags: ${error}`,
+              text: `❌ 著者検索でエラーが発生しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    case 'get_notes_by_date_range': {
-      if (!selectedVault) {
+    case 'search_book_by_genre': {
+      if (!bookSearchPlugin) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'Book Search plugin not available.',
             },
           ],
         };
       }
 
+      const { genre } = args as any;
+      
       try {
-        const { 
-          start_date, 
-          end_date, 
-          date_field = 'modified',
-          include_content = false,
-          sort_by = 'date',
-          folder_filter 
-        } = args as any;
-
-        const startDate = new Date(start_date);
-        const endDate = new Date(end_date);
+        const results = await bookSearchPlugin.searchByGenre(genre);
+        lastBookSearchResults = results;
         
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        if (results.length === 0) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Invalid date format. Please use YYYY-MM-DD format.',
+                text: `📚 ジャンル検索結果: "${genre}"
+
+該当する書籍が見つかりませんでした。
+
+**人気のジャンル:**
+- Fiction, Science Fiction, Mystery, Romance
+- Biography, History, Science, Technology
+- Business, Self-Help, Philosophy, Psychology`,
               },
             ],
           };
         }
 
-        const searchDir = folder_filter ? path.join(selectedVault!, folder_filter) : selectedVault!;
-        const matchingNotes: any[] = [];
-
-        async function scanDirectory(dir: string): Promise<void> {
-          try {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-            
-            for (const entry of entries) {
-              const fullPath = path.join(dir, entry.name);
-              
-              if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                await scanDirectory(fullPath);
-              } else if (entry.isFile() && entry.name.endsWith('.md')) {
-                const stats = await fs.stat(fullPath);
-                let dateToCheck: Date;
-                
-                switch (date_field) {
-                  case 'created':
-                    dateToCheck = stats.birthtime;
-                    break;
-                  case 'modified':
-                    dateToCheck = stats.mtime;
-                    break;
-                  case 'filename':
-                    // Extract date from filename if possible (YYYY-MM-DD format)
-                    const dateMatch = entry.name.match(/(\d{4}-\d{2}-\d{2})/);
-                    if (dateMatch) {
-                      dateToCheck = new Date(dateMatch[1]);
-                    } else {
-                      dateToCheck = stats.mtime; // fallback
-                    }
-                    break;
-                  default:
-                    dateToCheck = stats.mtime;
-                }
-                
-                if (dateToCheck >= startDate && dateToCheck <= endDate) {
-                  const relativePath = path.relative(selectedVault!, fullPath);
-                  const noteData: any = {
-                    name: entry.name,
-                    path: relativePath,
-                    created: stats.birthtime.toISOString(),
-                    modified: stats.mtime.toISOString(),
-                    size: stats.size,
-                  };
-                  
-                  if (include_content) {
-                    try {
-                      const content = await fs.readFile(fullPath, 'utf-8');
-                      noteData.content = content;
-                      noteData.wordCount = content.split(/\s+/).length;
-                    } catch (error) {
-                      noteData.content = 'Error reading file';
-                    }
-                  }
-                  
-                  matchingNotes.push(noteData);
-                }
-              }
-            }
-          } catch (error) {
-            // Skip directories that can't be read
-          }
-        }
-
-        await scanDirectory(searchDir);
-        
-        // Sort results
-        matchingNotes.sort((a, b) => {
-          switch (sort_by) {
-            case 'name':
-              return a.name.localeCompare(b.name);
-            case 'size':
-              return b.size - a.size;
-            case 'date':
-            default:
-              return new Date(b.modified).getTime() - new Date(a.modified).getTime();
-          }
-        });
+        const resultList = results.map((book, index) => 
+          `**${index + 1}. ${book.title}** by ${book.author.join(', ')}\n` +
+          `   ジャンル: ${book.categories?.slice(0, 3).join(', ') || 'N/A'}\n` +
+          `   出版年: ${book.publishedDate || 'N/A'}\n`
+        ).join('\n');
 
         return {
           content: [
             {
               type: 'text',
-              text: `📅 **Notes by Date Range**\n\n**Period:** ${start_date} to ${end_date}\n**Date Field:** ${date_field}\n**Found:** ${matchingNotes.length} notes\n${folder_filter ? `**Folder:** ${folder_filter}\n` : ''}\n**Results:**\n\n${matchingNotes.map(note => {
-                const date = date_field === 'created' ? note.created : note.modified;
-                const dateStr = new Date(date).toLocaleDateString();
-                return `• **${note.name}** (${dateStr})\n  Path: ${note.path}\n  Size: ${note.size} bytes${note.wordCount ? `\n  Words: ${note.wordCount}` : ''}`;
-              }).join('\n\n')}`,
+              text: `📚 ジャンル検索結果: "${genre}" (${results.length}件)
+
+${resultList}
+
+**書籍ノート作成:**
+create_book_note(option_number: X) でノートを作成できます`,
             },
           ],
         };
@@ -4303,183 +6800,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error searching notes by date range: ${error}`,
+              text: `❌ ジャンル検索でエラーが発生しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    case 'validate_broken_links': {
-      if (!selectedVault) {
+    case 'get_book_recommendations': {
+      if (!bookSearchPlugin) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first.',
+              text: 'Book Search plugin not available.',
             },
           ],
         };
       }
 
+      const { seed_title, seed_author } = args as any;
+      
       try {
-        const { 
-          fix_links = false,
-          scan_folder,
-          link_types = ['wiki', 'markdown']
-        } = args as any;
+        const results = await bookSearchPlugin.getBookRecommendations(seed_title, seed_author);
+        lastBookSearchResults = results;
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `🎯 書籍推薦
 
-        const searchDir = scan_folder ? path.join(selectedVault!, scan_folder) : selectedVault!;
-        const brokenLinks: any[] = [];
-        const fixedLinks: any[] = [];
-        
-        // Get all markdown files for reference
-        const allFiles = new Set<string>();
-        async function collectFiles(dir: string): Promise<void> {
-          try {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-            for (const entry of entries) {
-              const fullPath = path.join(dir, entry.name);
-              if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                await collectFiles(fullPath);
-              } else if (entry.isFile() && entry.name.endsWith('.md')) {
-                const relativePath = path.relative(selectedVault!, fullPath);
-                allFiles.add(relativePath.replace(/\.md$/, ''));
-              }
-            }
-          } catch (error) {
-            // Skip directories that can't be read
-          }
-        }
-        
-        await collectFiles(selectedVault!);
-        
-        async function scanForBrokenLinks(dir: string): Promise<void> {
-          try {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-            
-            for (const entry of entries) {
-              const fullPath = path.join(dir, entry.name);
-              
-              if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                await scanForBrokenLinks(fullPath);
-              } else if (entry.isFile() && entry.name.endsWith('.md')) {
-                try {
-                  const content = await fs.readFile(fullPath, 'utf-8');
-                  const relativePath = path.relative(selectedVault!, fullPath);
-                  let updatedContent = content;
-                  let hasChanges = false;
-                  
-                  // Check wiki-style links [[note]]
-                  if (link_types.includes('wiki')) {
-                    const wikiLinks = content.match(/\[\[([^\]]+)\]\]/g) || [];
-                    for (const link of wikiLinks) {
-                      const linkTarget = link.slice(2, -2).split('|')[0].trim();
-                      
-                      if (!allFiles.has(linkTarget)) {
-                        // Try to find similar files
-                        const similarFiles = Array.from(allFiles).filter(file => 
-                          file.toLowerCase().includes(linkTarget.toLowerCase()) ||
-                          linkTarget.toLowerCase().includes(file.toLowerCase())
-                        );
-                        
-                        const brokenLink = {
-                          file: relativePath,
-                          link: link,
-                          target: linkTarget,
-                          type: 'wiki',
-                          suggestions: similarFiles.slice(0, 3)
-                        };
-                        
-                        if (fix_links && similarFiles.length === 1) {
-                          // Auto-fix if there's exactly one similar file
-                          const fixedLink = link.replace(linkTarget, similarFiles[0]);
-                          updatedContent = updatedContent.replace(link, fixedLink);
-                          hasChanges = true;
-                          
-                          fixedLinks.push({
-                            ...brokenLink,
-                            fixedTo: similarFiles[0]
-                          });
-                        } else {
-                          brokenLinks.push(brokenLink);
-                        }
-                      }
-                    }
-                  }
-                  
-                  // Check markdown-style links [text](note.md)
-                  if (link_types.includes('markdown')) {
-                    const markdownLinks = content.match(/\[([^\]]+)\]\(([^)]+\.md)\)/g) || [];
-                    for (const link of markdownLinks) {
-                      const match = link.match(/\[([^\]]+)\]\(([^)]+\.md)\)/);
-                      if (match) {
-                        const linkTarget = match[2].replace(/\.md$/, '');
-                        
-                        if (!allFiles.has(linkTarget)) {
-                          brokenLinks.push({
-                            file: relativePath,
-                            link: link,
-                            target: linkTarget,
-                            type: 'markdown',
-                            suggestions: []
-                          });
-                        }
-                      }
-                    }
-                  }
-                  
-                  // Write back fixed content
-                  if (hasChanges && fix_links) {
-                    await fs.writeFile(fullPath, updatedContent, 'utf-8');
-                  }
-                  
-                } catch (error) {
-                  // Skip files that can't be read
-                }
-              }
-            }
-          } catch (error) {
-            // Skip directories that can't be read
-          }
+推薦書籍が見つかりませんでした。
+
+**推薦を得るためのヒント:**
+- 好きな本のタイトルを指定してください
+- 好きな著者名を指定してください
+- 人気のある本や著者を試してみてください`,
+              },
+            ],
+          };
         }
 
-        await scanForBrokenLinks(searchDir);
-        
-        let reportText = `🔗 **Broken Links Validation Report**\n\n`;
-        reportText += `**Scanned:** ${scan_folder || 'Entire vault'}\n`;
-        reportText += `**Link Types:** ${link_types.join(', ')}\n`;
-        reportText += `**Broken Links Found:** ${brokenLinks.length}\n`;
-        reportText += `**Links Fixed:** ${fixedLinks.length}\n\n`;
-        
-        if (fixedLinks.length > 0) {
-          reportText += `**✅ Fixed Links:**\n`;
-          fixedLinks.forEach(fix => {
-            reportText += `• ${fix.file}: ${fix.link} → [[${fix.fixedTo}]]\n`;
-          });
-          reportText += `\n`;
-        }
-        
-        if (brokenLinks.length > 0) {
-          reportText += `**❌ Broken Links:**\n`;
-          brokenLinks.forEach(broken => {
-            reportText += `• **${broken.file}**\n`;
-            reportText += `  Link: ${broken.link}\n`;
-            reportText += `  Target: ${broken.target}\n`;
-            if (broken.suggestions.length > 0) {
-              reportText += `  Suggestions: ${broken.suggestions.join(', ')}\n`;
-            }
-            reportText += `\n`;
-          });
-        } else if (fixedLinks.length === 0) {
-          reportText += `✅ No broken links found!`;
-        }
+        const seedInfo = seed_title || seed_author ? 
+          `基準: ${seed_title ? `"${seed_title}"` : ''} ${seed_author ? `by ${seed_author}` : ''}` :
+          '人気書籍からの推薦';
+
+        const recommendationList = results.map((book, index) => 
+          `**${index + 1}. ${book.title}** by ${book.author.join(', ')}\n` +
+          `   評価: ${book.rating ? `${book.rating}/5` : 'N/A'}\n` +
+          `   ${book.description ? book.description.substring(0, 120) + '...' : 'No description'}\n`
+        ).join('\n');
 
         return {
           content: [
             {
               type: 'text',
-              text: reportText,
+              text: `🎯 書籍推薦 (${results.length}件)
+${seedInfo}
+
+${recommendationList}
+
+**次のアクション:**
+- create_book_note(option_number: X) でノート作成
+- add_book_to_reading_list(option_number: X) で読書リストに追加`,
             },
           ],
         };
@@ -4488,14 +6873,556 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error validating broken links: ${error}`,
+              text: `❌ 書籍推薦でエラーが発生しました: ${error}`,
             },
           ],
         };
       }
     }
 
-    // Tasks Plugin Tools
+    case 'create_reading_list': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const readingList = await bookSearchPlugin.createReadingList();
+        
+        if (readingList.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📖 読書リスト
+
+読書リストが作成されました（現在は空です）。
+
+**読書リストの使い方:**
+1. 書籍を検索: search_book_by_title(), search_book_by_author()
+2. リストに追加: add_book_to_reading_list(option_number: X)
+3. 読書進捗を確認: get_reading_progress()
+
+保存場所: Books/reading-list.json`,
+              },
+            ],
+          };
+        }
+
+        const statusCounts = {
+          'want-to-read': readingList.filter(item => item.status === 'want-to-read').length,
+          'currently-reading': readingList.filter(item => item.status === 'currently-reading').length,
+          'read': readingList.filter(item => item.status === 'read').length,
+        };
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📖 読書リスト (${readingList.length}冊)
+
+**ステータス別:**
+- 📚 読みたい本: ${statusCounts['want-to-read']}冊
+- 📖 現在読書中: ${statusCounts['currently-reading']}冊  
+- ✅ 読了: ${statusCounts['read']}冊
+
+**詳細確認:**
+- get_reading_progress() で詳細統計
+- search_personal_library("キーワード") でライブラリ検索`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 読書リストの作成に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'add_book_to_reading_list': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { book_data, option_number, status = 'want-to-read', priority = 'medium', reading_goal } = args as any;
+      
+      let book: BookMetadata;
+      
+      // Check if using option_number from last search
+      if (option_number && !book_data) {
+        if (lastBookSearchResults.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '最近の検索結果がありません。まず書籍を検索してください。',
+              },
+            ],
+          };
+        }
+        
+        const index = option_number - 1;
+        if (index < 0 || index >= lastBookSearchResults.length) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `無効な選択番号です。1から${lastBookSearchResults.length}までの番号を選択してください。`,
+              },
+            ],
+          };
+        }
+        
+        book = lastBookSearchResults[index];
+      } else if (book_data) {
+        book = book_data as BookMetadata;
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'book_dataまたは検索結果のoption_numberを指定してください。',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const addedItem = await bookSearchPlugin.addBookToReadingList(book, status, priority, reading_goal);
+        
+        const statusEmoji = {
+          'want-to-read': '📚',
+          'currently-reading': '📖',
+          'read': '✅'
+        };
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${statusEmoji[status]} 読書リストに追加されました！
+
+**書籍情報:**
+- タイトル: ${book.title}
+- 著者: ${book.author.join(', ')}
+- ステータス: ${status}
+- 優先度: ${priority}
+${reading_goal ? `- 読書目標: ${reading_goal}` : ''}
+
+**書籍ID:** ${addedItem.id}
+
+**次のアクション:**
+- get_reading_progress() で進捗確認
+- mark_book_as_read("${addedItem.id}") で読了マーク`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 読書リストへの追加に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'mark_book_as_read': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { book_id, personal_rating, personal_notes } = args as any;
+      
+      try {
+        const success = await bookSearchPlugin.markBookAsRead(book_id, personal_rating, personal_notes);
+        
+        if (success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ 書籍を読了にマークしました！
+
+**更新内容:**
+- ステータス: 読了
+- 読了日: ${new Date().toLocaleDateString('ja-JP')}
+${personal_rating ? `- 評価: ${personal_rating}/5⭐` : ''}
+${personal_notes ? `- メモ: ${personal_notes}` : ''}
+
+**統計確認:**
+get_reading_progress() で読書統計を確認できます`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '指定された書籍IDが読書リストに見つかりませんでした。',
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 読了マークに失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_reading_progress': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+      
+      try {
+        const progress = await bookSearchPlugin.getReadingProgress();
+        
+        const currentlyReadingList = progress.currentlyReading.length > 0 ? 
+          progress.currentlyReading.map(item => 
+            `- ${item.book.title} by ${item.book.author.join(', ')}`
+          ).join('\n') : '現在読んでいる本はありません';
+
+        const monthlyStatsEntries = Object.entries(progress.readingStats.monthlyStats)
+          .filter(([_, count]) => count > 0)
+          .slice(-6);
+        const monthlyStatsText = monthlyStatsEntries.length > 0 ?
+          monthlyStatsEntries.map(([month, count]) => `  ${month}: ${count}冊`).join('\n') :
+          '  今年の読書記録がありません';
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📊 読書進捗統計
+
+**📚 総合統計:**
+- 総書籍数: ${progress.totalBooks}冊
+- 読みたい本: ${progress.wantToRead}冊
+- 現在読書中: ${progress.currentlyReading.length}冊
+- 読了: ${progress.completedBooks.length}冊
+- 今年読了: ${progress.completedThisYear}冊
+
+**⭐ 評価統計:**
+- 平均評価: ${progress.averageRating.toFixed(1)}/5
+- 総読書ページ数: ${progress.readingStats.totalPages.toLocaleString()}ページ
+- 1冊あたり平均: ${Math.round(progress.readingStats.averagePages)}ページ
+
+**📖 現在読書中:**
+${currentlyReadingList}
+
+**📈 月別読書実績:**
+${monthlyStatsText}
+
+**詳細確認:**
+- export_reading_data("markdown") で詳細レポート
+- search_personal_library("キーワード") でライブラリ検索`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 読書進捗の取得に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'rate_book': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { book_id, rating, notes } = args as any;
+      
+      try {
+        const success = await bookSearchPlugin.rateBook(book_id, rating, notes);
+        
+        if (success) {
+          const stars = '⭐'.repeat(rating);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `⭐ 書籍評価を更新しました！
+
+**評価:** ${rating}/5 ${stars}
+${notes ? `**メモ:** ${notes}` : ''}
+
+**統計確認:**
+get_reading_progress() で評価統計を確認できます`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '指定された書籍IDが読書リストに見つかりませんでした。',
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 書籍評価に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'add_book_notes': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { book_id, notes } = args as any;
+      
+      try {
+        const success = await bookSearchPlugin.addBookNotes(book_id, notes);
+        
+        if (success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `📝 書籍メモを更新しました！
+
+**追加されたメモ:**
+${notes}
+
+**ライブラリ検索:**
+search_personal_library("キーワード") でメモ内容も検索対象になります`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: '指定された書籍IDが読書リストに見つかりませんでした。',
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 書籍メモの追加に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'search_personal_library': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { query } = args as any;
+      
+      try {
+        const results = await bookSearchPlugin.searchPersonalLibrary(query);
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `🔍 ライブラリ検索結果: "${query}"
+
+該当する書籍が見つかりませんでした。
+
+**検索対象:**
+- 書籍タイトル
+- 著者名  
+- ジャンル・カテゴリ
+- 個人メモ
+
+**ヒント:**
+- 部分的なキーワードでも検索できます
+- create_reading_list() で読書リストを確認`,
+              },
+            ],
+          };
+        }
+
+        const resultList = results.map((item, index) => {
+          const statusEmoji = {
+            'want-to-read': '📚',
+            'currently-reading': '📖',
+            'read': '✅'
+          };
+          
+          return `${statusEmoji[item.status]} **${index + 1}. ${item.book.title}**
+   著者: ${item.book.author.join(', ')}
+   ステータス: ${item.status}
+   ${item.personalRating ? `評価: ${item.personalRating}/5⭐` : ''}
+   ${item.personalNotes ? `メモ: ${item.personalNotes.substring(0, 100)}...` : ''}
+   ID: ${item.id}\n`;
+        }).join('\n');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `🔍 ライブラリ検索結果: "${query}" (${results.length}件)
+
+${resultList}
+
+**操作:**
+- rate_book("book_id", rating) で評価
+- mark_book_as_read("book_id") で読了マーク
+- add_book_notes("book_id", "メモ") でメモ追加`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ ライブラリ検索に失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'export_reading_data': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボールトが選択されていないか、Book Searchプラグインが利用できません。',
+            },
+          ],
+        };
+      }
+
+      const { format = 'json' } = args as any;
+      
+      try {
+        const exportedData = await bookSearchPlugin.exportReadingData(format);
+        
+        const formatInfo = {
+          json: { name: 'JSON', ext: 'json', desc: '構造化データとして保存' },
+          csv: { name: 'CSV', ext: 'csv', desc: 'Excel等で開ける表形式' },
+          markdown: { name: 'Markdown', ext: 'md', desc: 'Obsidianで読める形式' }
+        };
+
+        const info = formatInfo[format];
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `reading-data-export-${timestamp}.${info.ext}`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📤 読書データエクスポート完了
+
+**形式:** ${info.name} (${info.desc})
+**推奨ファイル名:** ${filename}
+
+**エクスポートされたデータ:**
+${format === 'markdown' ? exportedData : `データサイズ: ${exportedData.length}文字\n\n以下のデータをファイルに保存してください:\n\n${exportedData.substring(0, 500)}${exportedData.length > 500 ? '...\n\n[データが長いため省略されています]' : ''}`}
+
+**他の形式での出力:**
+- export_reading_data("json") - JSON形式
+- export_reading_data("csv") - CSV形式  
+- export_reading_data("markdown") - Markdown形式`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `❌ 読書データのエクスポートに失敗しました: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    // Tasks Plugin Functions
     case 'create_task': {
       if (!selectedVault || !tasksPlugin) {
         return {
@@ -4508,26 +7435,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      const { description, priority, scheduled_date, start_date, due_date, tags, project, file_path } = args as any;
+      
       try {
         const taskData: Partial<TaskMetadata> = {
-          description: args?.description as string,
-          status: (args?.status as any) || 'incomplete',
-          priority: args?.priority as any,
-          dueDate: args?.dueDate as string,
-          scheduledDate: args?.scheduledDate as string,
-          startDate: args?.startDate as string,
-          tags: args?.tags as string[],
-          project: args?.project as string,
+          description: description || 'New Task',
+          status: 'incomplete' as const,
+          priority: priority as TaskMetadata['priority'],
+          scheduledDate: scheduled_date,
+          startDate: start_date,
+          dueDate: due_date,
+          tags: tags || [],
+          project,
         };
-
-        const filePath = args?.filePath as string;
-        const task = await tasksPlugin.createTask(taskData, filePath);
-
+        
+        const createdTask = await tasksPlugin.createTask(taskData, file_path);
+        
         return {
           content: [
             {
               type: 'text',
-              text: `✅ タスクを作成しました:\n\n**${task.description}**\n- ステータス: ${task.status}\n- ファイル: ${task.filePath}${task.priority ? `\n- 優先度: ${task.priority}` : ''}${task.dueDate ? `\n- 期限: ${task.dueDate}` : ''}${task.project ? `\n- プロジェクト: ${task.project}` : ''}`,
+              text: `✅ Task created successfully!\n\n` +
+                   `**Task Details:**\n` +
+                   `- Description: ${createdTask.description}\n` +
+                   `- Status: ${createdTask.status}\n` +
+                   `- Priority: ${createdTask.priority || 'None'}\n` +
+                   `- Created: ${createdTask.createdDate || 'Today'}\n` +
+                   `- Due Date: ${createdTask.dueDate || 'None'}\n` +
+                   `- Tags: ${createdTask.tags?.join(', ') || 'None'}\n` +
+                   `- File: ${createdTask.filePath || 'Tasks.md'}`,
             },
           ],
         };
@@ -4555,41 +7491,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      const { status_filter, priority_filter, project_filter, tag_filter, due_after, due_before } = args as any;
+      
       try {
-        const filters: TaskFilters = {
-          status: args?.status as any,
-          priority: args?.priority as any,
-          hasScheduledDate: args?.hasScheduledDate as boolean,
-          hasDueDate: args?.hasDueDate as boolean,
-          project: args?.project as string,
-          tag: args?.tag as string[],
-          path: args?.path as string,
-          dueAfter: args?.dueAfter as string,
-          dueBefore: args?.dueBefore as string,
-        };
-
+        const filters: TaskFilters = {};
+        if (status_filter) filters.status = Array.isArray(status_filter) ? status_filter : [status_filter];
+        if (priority_filter) filters.priority = Array.isArray(priority_filter) ? priority_filter : [priority_filter];
+        if (project_filter) filters.project = project_filter;
+        if (tag_filter) filters.tag = Array.isArray(tag_filter) ? tag_filter : [tag_filter];
+        if (due_after) filters.dueAfter = due_after;
+        if (due_before) filters.dueBefore = due_before;
+        
         const tasks = await tasksPlugin.listTasks(filters);
-
+        
         if (tasks.length === 0) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'フィルター条件に一致するタスクが見つかりませんでした。',
+                text: 'タスクが見つかりませんでした。',
               },
             ],
           };
         }
-
-        const taskList = tasks.map(task => 
-          `- [${task.status === 'complete' ? 'x' : task.status === 'cancelled' ? '-' : task.status === 'in-progress' ? '/' : ' '}] ${task.description}${task.priority ? ` (${task.priority})` : ''}${task.dueDate ? ` 📅 ${task.dueDate}` : ''}${task.tags && task.tags.length > 0 ? ` #${task.tags.join(' #')}` : ''}`
-        ).join('\n');
-
+        
+        const taskList = tasks.map(task => {
+          const statusIcon = task.status === 'complete' ? '✅' : 
+                           task.status === 'cancelled' ? '❌' : 
+                           task.status === 'in-progress' ? '🔄' : '⏸️';
+          
+          const priorityIcon = task.priority === 'highest' ? '🔺' : 
+                             task.priority === 'high' ? '⏫' : 
+                             task.priority === 'medium' ? '🔼' : 
+                             task.priority === 'low' ? '🔽' : 
+                             task.priority === 'lowest' ? '⏬' : '';
+          
+          return `${statusIcon} **${task.description}** ${priorityIcon}\n` +
+                 `   📁 ${task.filePath || 'Unknown'}\n` +
+                 `   ${task.dueDate ? `📅 Due: ${task.dueDate}` : ''}${task.project ? ` 📋 ${task.project}` : ''}\n` +
+                 `   ${task.tags?.length ? `🏷️ ${task.tags.join(', ')}` : ''}`;
+        }).join('\n\n');
+        
         return {
           content: [
             {
               type: 'text',
-              text: `📋 見つかったタスク (${tasks.length}件):\n\n${taskList}`,
+              text: `📋 タスク一覧 (${tasks.length}件)\n\n${taskList}`,
             },
           ],
         };
@@ -4617,23 +7564,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      const { file_path, task_line, new_status } = args as any;
+      
       try {
-        const filePath = args?.filePath as string;
-        const lineNumber = args?.lineNumber as number;
-        const newStatus = args?.newStatus as any;
-
-        const success = await tasksPlugin.updateTaskStatus(filePath, lineNumber, newStatus);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: success 
-                ? `✅ タスクのステータスを「${newStatus}」に更新しました。`
-                : 'タスクの更新に失敗しました。',
-            },
-          ],
-        };
+        const success = await tasksPlugin.updateTaskStatus(file_path, parseInt(task_line), new_status);
+        
+        if (success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ タスクステータスを更新しました！\n\n` +
+                     `📁 File: ${file_path}\n` +
+                     `📋 Line: ${task_line}\n` +
+                     `🔄 Status: ${new_status}`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'タスクステータスの更新に失敗しました。',
+              },
+            ],
+          };
+        }
       } catch (error) {
         return {
           content: [
@@ -4660,19 +7617,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       try {
         const stats = await tasksPlugin.getTaskStats();
-
+        
         return {
           content: [
             {
               type: 'text',
-              text: `📊 タスク統計:\n\n` +
-                   `🔢 総タスク数: ${stats.total}\n` +
-                   `⏳ 未完了: ${stats.incomplete}\n` +
-                   `✅ 完了: ${stats.complete}\n` +
-                   `❌ キャンセル: ${stats.cancelled}\n` +
-                   `🔴 期限切れ: ${stats.overdue}\n` +
-                   `📅 今日期限: ${stats.dueToday}\n` +
-                   `📆 明日期限: ${stats.dueTomorrow}`,
+              text: `📊 タスク統計\n\n` +
+                   `**概要:**\n` +
+                   `- 総タスク数: ${stats.total}\n` +
+                   `- 未完了: ${stats.incomplete} (${stats.total > 0 ? Math.round(stats.incomplete / stats.total * 100) : 0}%)\n` +
+                   `- 完了: ${stats.complete} (${stats.total > 0 ? Math.round(stats.complete / stats.total * 100) : 0}%)\n` +
+                   `- キャンセル: ${stats.cancelled}\n\n` +
+                   `**期限関連:**\n` +
+                   `- 期限切れ: ${stats.overdue} ⚠️\n` +
+                   `- 今日期限: ${stats.dueToday} 📅\n` +
+                   `- 明日期限: ${stats.dueTomorrow} 📅`,
             },
           ],
         };
@@ -4702,27 +7661,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       try {
         const overdueTasks = await tasksPlugin.getOverdueTasks();
-
+        
         if (overdueTasks.length === 0) {
           return {
             content: [
               {
                 type: 'text',
-                text: '🎉 期限切れのタスクはありません！',
+                text: '🎉 期限切れタスクはありません！',
               },
             ],
           };
         }
-
-        const taskList = overdueTasks.map(task => 
-          `- [ ] ${task.description} 📅 ${task.dueDate}${task.priority ? ` (${task.priority})` : ''}${task.tags && task.tags.length > 0 ? ` #${task.tags.join(' #')}` : ''}`
-        ).join('\n');
-
+        
+        const taskList = overdueTasks.map(task => {
+          const daysOverdue = task.dueDate ? 
+            Math.floor((new Date().getTime() - new Date(task.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+          
+          const priorityIcon = task.priority === 'highest' ? '🔺' : 
+                             task.priority === 'high' ? '⏫' : 
+                             task.priority === 'medium' ? '🔼' : 
+                             task.priority === 'low' ? '🔽' : 
+                             task.priority === 'lowest' ? '⏬' : '';
+          
+          return `⚠️ **${task.description}** ${priorityIcon}\n` +
+                 `   📅 Due: ${task.dueDate} (${daysOverdue}日経過)\n` +
+                 `   📁 ${task.filePath || 'Unknown'}\n` +
+                 `   ${task.project ? `📋 ${task.project}` : ''}${task.tags?.length ? ` 🏷️ ${task.tags.join(', ')}` : ''}`;
+        }).join('\n\n');
+        
         return {
           content: [
             {
               type: 'text',
-              text: `🔴 期限切れのタスク (${overdueTasks.length}件):\n\n${taskList}`,
+              text: `⚠️ 期限切れタスク (${overdueTasks.length}件)\n\n${taskList}`,
             },
           ],
         };
@@ -4753,7 +7724,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const tasksByProject = await tasksPlugin.getTasksByProject();
         const projectNames = Object.keys(tasksByProject);
-
+        
         if (projectNames.length === 0) {
           return {
             content: [
@@ -4764,18 +7735,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         }
-
+        
         let result = '📁 プロジェクト別タスク:\n\n';
         
         projectNames.forEach(project => {
           const tasks = tasksByProject[project];
-          result += `## ${project} (${tasks.length}件)\n`;
+          const completedCount = tasks.filter(t => t.status === 'complete').length;
+          const totalCount = tasks.length;
+          const completionRate = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
+          
+          result += `## ${project} (${totalCount}件, ${completionRate}% 完了)\n`;
+          
           tasks.forEach(task => {
-            result += `- [${task.status === 'complete' ? 'x' : task.status === 'cancelled' ? '-' : task.status === 'in-progress' ? '/' : ' '}] ${task.description}${task.dueDate ? ` 📅 ${task.dueDate}` : ''}\n`;
+            const statusIcon = task.status === 'complete' ? '✅' : 
+                             task.status === 'cancelled' ? '❌' : 
+                             task.status === 'in-progress' ? '🔄' : '⏸️';
+            
+            const priorityIcon = task.priority === 'highest' ? '🔺' : 
+                               task.priority === 'high' ? '⏫' : 
+                               task.priority === 'medium' ? '🔼' : 
+                               task.priority === 'low' ? '🔽' : 
+                               task.priority === 'lowest' ? '⏬' : '';
+            
+            result += `  ${statusIcon} ${task.description} ${priorityIcon}`;
+            if (task.dueDate) result += ` 📅 ${task.dueDate}`;
+            result += '\n';
           });
           result += '\n';
         });
-
+        
         return {
           content: [
             {
@@ -4796,388 +7784,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    // Kanban Plugin Tools
-    case 'create_kanban_board': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardName = args?.boardName as string;
-        const laneNames = (args?.laneNames as string[]) || ['To Do', 'Doing', 'Done'];
-        const filePath = args?.filePath as string;
-
-        const boardPath = await kanbanPlugin.createKanbanBoard(boardName, laneNames, filePath);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `🎯 Kanbanボードを作成しました:\n\n**${boardName}**\n- ファイルパス: ${boardPath}\n- レーン数: ${laneNames.length}\n- レーン: ${laneNames.join(', ')}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error creating Kanban board: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'add_kanban_card': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const laneTitle = args?.laneTitle as string;
-        const cardData: CardCreateData = {
-          title: args?.title as string,
-          content: args?.content as string,
-          assignee: args?.assignee as string,
-          tags: args?.tags as string[],
-          dueDate: args?.dueDate as string,
-          checkItems: args?.checkItems as string[],
-        };
-
-        const card = await kanbanPlugin.addKanbanCard(boardPath, laneTitle, cardData);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `📝 カードを追加しました:\n\n**${card.title}**\n- レーン: ${laneTitle}\n- ID: ${card.id}${card.assignee ? `\n- 担当者: ${card.assignee}` : ''}${card.dueDate ? `\n- 期限: ${card.dueDate}` : ''}${card.tags && card.tags.length > 0 ? `\n- タグ: ${card.tags.join(', ')}` : ''}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error adding Kanban card: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'move_kanban_card': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const cardId = args?.cardId as string;
-        const targetLaneTitle = args?.targetLaneTitle as string;
-        const position = args?.position as number;
-
-        const success = await kanbanPlugin.moveKanbanCard(boardPath, cardId, targetLaneTitle, position);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: success 
-                ? `🔄 カードを「${targetLaneTitle}」レーンに移動しました。`
-                : 'カードの移動に失敗しました。',
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error moving Kanban card: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'update_kanban_card': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const cardId = args?.cardId as string;
-        const updates: Partial<CardCreateData> = {};
-        
-        if (args?.title !== undefined) updates.title = args.title as string;
-        if (args?.content !== undefined) updates.content = args.content as string;
-        if (args?.assignee !== undefined) updates.assignee = args.assignee as string;
-        if (args?.tags !== undefined) updates.tags = args.tags as string[];
-        if (args?.dueDate !== undefined) updates.dueDate = args.dueDate as string;
-        if (args?.checkItems !== undefined) updates.checkItems = args.checkItems as string[];
-
-        const success = await kanbanPlugin.updateKanbanCard(boardPath, cardId, updates);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: success 
-                ? '✅ カードを更新しました。'
-                : 'カードの更新に失敗しました。',
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error updating Kanban card: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'list_kanban_boards': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boards = await kanbanPlugin.listKanbanBoards();
-
-        if (boards.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'Kanbanボードが見つかりませんでした。',
-              },
-            ],
-          };
-        }
-
-        const boardList = boards.map(board => 
-          `- **${board.name}**\n  - パス: ${board.path}\n  - レーン数: ${board.laneCount}\n  - カード数: ${board.cardCount}`
-        ).join('\n\n');
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `🎯 Kanbanボード一覧 (${boards.length}個):\n\n${boardList}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error listing Kanban boards: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'get_kanban_board': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const { board, name, stats } = await kanbanPlugin.getKanbanBoard(boardPath);
-
-        let result = `🎯 **${name}** Kanbanボード\n\n`;
-        result += `📊 **統計:**\n- 総カード数: ${stats.totalCards}\n- アーカイブ: ${stats.archivedCards}\n\n`;
-        result += `📋 **レーン別カード数:**\n`;
-        
-        Object.entries(stats.cardsByLane).forEach(([lane, count]) => {
-          result += `- ${lane}: ${count}枚\n`;
-        });
-
-        result += `\n🔄 **レーン詳細:**\n`;
-        board.lanes.forEach(lane => {
-          result += `\n## ${lane.title} (${lane.cards.length}枚)\n`;
-          if (lane.cards.length > 0) {
-            lane.cards.forEach(card => {
-              result += `- ${card.title}${card.assignee ? ` [@${card.assignee}]` : ''}${card.dueDate ? ` 📅${card.dueDate}` : ''}\n`;
-            });
-          } else {
-            result += `- (カードなし)\n`;
-          }
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: result,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error getting Kanban board: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'delete_kanban_card': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const cardId = args?.cardId as string;
-
-        const success = await kanbanPlugin.deleteKanbanCard(boardPath, cardId);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: success 
-                ? '🗑️ カードを削除しました。'
-                : 'カードの削除に失敗しました。',
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error deleting Kanban card: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'archive_kanban_card': {
-      if (!selectedVault || !kanbanPlugin) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected or Kanban plugin not initialized.',
-            },
-          ],
-        };
-      }
-
-      try {
-        const boardPath = args?.boardPath as string;
-        const cardId = args?.cardId as string;
-
-        const success = await kanbanPlugin.archiveKanbanCard(boardPath, cardId);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: success 
-                ? '📦 カードをアーカイブしました。'
-                : 'カードのアーカイブに失敗しました。',
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error archiving Kanban card: ${error}`,
-            },
-          ],
-        };
-      }
-    }
-
     default:
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Unknown tool: ${name}`,
-          },
-        ],
-      };
+      throw new Error(`Unknown tool: ${name}`);
   }
 });
 
-// Start the server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error('ObsidianMCP Full Server running with all features including plugins...');
-}
-
-main().catch((error) => {
-  console.error('Server error:', error);
-  process.exit(1);
-});
+export { server };

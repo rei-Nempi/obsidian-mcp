@@ -1,7 +1,7 @@
 # ObsidianMCP Usage Guide / 使用方法ガイド
 
-Complete usage instructions for all 61+ functions available in ObsidianMCP.  
-ObsidianMCPで利用可能な61以上の機能の完全使用方法。
+Complete usage instructions for all 59 functions available in ObsidianMCP.  
+ObsidianMCPで利用可能な59の機能の完全使用方法。
 
 **You can use these commands in either English or Japanese - both languages work identically!**  
 **これらのコマンドは英語でも日本語でも使用可能です - どちらの言語でも同じように動作します！**
@@ -15,7 +15,7 @@ ObsidianMCPで利用可能な61以上の機能の完全使用方法。
 - [Template Management / テンプレート管理 (6 functions)](#template-management--テンプレート管理-6-functions)
 - [Task Notes / タスクノート (6 functions)](#task-notes--タスクノート-6-functions)
 - [Book Search / 書籍検索 (14 functions)](#book-search--書籍検索-14-functions)
-- [Daily Notes / デイリーノート (1 function)](#daily-notes--デイリーノート-1-function)
+- [Daily Notes / デイリーノート (2 functions)](#daily-notes--デイリーノート-2-functions)
 - [Advanced Search / 高度検索 (2 functions)](#advanced-search--高度検索-2-functions)
 - [User Confirmation System / ユーザー確認システム](#user-confirmation-system--ユーザー確認システム)
 
@@ -249,7 +249,7 @@ Select a specific vault to work with.
 "データサイエンス本の読書リストを作成して"
 ```
 
-## Daily Notes / デイリーノート (1 function)
+## Daily Notes / デイリーノート (2 functions)
 
 ### Create Daily Notes / デイリーノート作成
 ```
@@ -259,6 +259,16 @@ Select a specific vault to work with.
 "今日のデイリーノートを作成して"
 "明日のデイリーノートを会議テンプレートで作成して"
 "2024-01-15のデイリーノートをテンプレート選択で作成して"
+```
+
+### Create Weekly Notes / 週次ノート作成
+```
+"Create this week's weekly note"
+"Make a weekly note for next week"
+"Create a weekly note for 2024-01-15"
+"今週の週次ノートを作成して"
+"来週の週次ノートを作成して"
+"2024-01-15の週次ノートを作成して"
 ```
 
 ## Advanced Search / 高度検索 (2 functions)

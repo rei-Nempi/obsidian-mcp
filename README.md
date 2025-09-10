@@ -9,7 +9,7 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 
 ## Features / 機能
 
-**🎯 Complete Feature Set: 61+ Functions / 完全機能セット：61以上の機能**
+**🎯 Complete Feature Set: 59 Functions / 完全機能セット：59の機能**
 
 ### 🏗️ Core Features / コア機能 (17 functions)
 
@@ -71,9 +71,10 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 - 📋 **Outline Generation** - Create hierarchical outlines from note content
 - 🏷️ **Smart Tag Suggestions** - AI-powered tag recommendations based on content
 
-### 📝 Time-based Notes / 時系列ノート (1 function)
+### 📝 Time-based Notes / 時系列ノート (2 functions)
 
 - 📅 **Daily Note Creation** - Create daily notes with template selection prompts
+- 📅 **Weekly Note Creation** - Create weekly notes with customizable date formats
 
 ### 🔍 Advanced Search & Maintenance / 高度検索・メンテナンス (2 functions)
 
@@ -129,9 +130,10 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 - 📋 **アウトライン生成** - ノート内容から階層アウトライン作成
 - 🏷️ **スマートタグ提案** - 内容ベースAI駆動タグ推薦
 
-### 📝 時系列ノート (1機能)
+### 📝 時系列ノート (2機能)
 
 - 📅 **デイリーノート作成** - テンプレート選択確認付き日次ノート作成
+- 📅 **週次ノート作成** - カスタマイズ可能な日付形式での週次ノート作成
 
 ### 🔍 高度検索・メンテナンス (2機能)
 
@@ -283,8 +285,8 @@ Once configured, you can use natural language commands in Claude:
 
 ## Available Commands / 利用可能なコマンド
 
-**📋 Complete Command Reference: [USAGE.md](USAGE.md) contains detailed examples for all 53+ functions**  
-**📋 完全コマンドリファレンス：[USAGE.md](USAGE.md)に全53以上の機能の詳細例があります**
+**📋 Complete Command Reference: [USAGE.md](USAGE.md) contains detailed examples for all 59 functions**  
+**📋 完全コマンドリファレンス：[USAGE.md](USAGE.md)に全59機能の詳細例があります**
 
 ### Core Commands / コアコマンド (17 functions)
 
