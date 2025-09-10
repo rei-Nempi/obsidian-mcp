@@ -249,7 +249,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Obsidian](https://obsidian.md/)ユーザー向けに設計
 
 ## Support / サポート
-
-- 🐛 [Report Issues / 問題を報告](https://github.com/rei-Nempi/obsidian-mcp/issues)
-- 💬 [Discussions / ディスカッション](https://github.com/rei-Nempi/obsidian-mcp/discussions)
-- 📖 [Documentation / ドキュメント](https://github.com/rei-Nempi/obsidian-mcp/wiki)
