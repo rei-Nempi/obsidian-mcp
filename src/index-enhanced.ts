@@ -8,8 +8,11 @@ import {
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import * as crypto from 'crypto';
+import { TemplaterPlugin, TemplaterVariable } from './plugins/templater';
+import { BookSearchPlugin, BookMetadata } from './plugins/book-search';
 
-// Enhanced MCP Server for Obsidian with Vault Discovery
+// Full MCP Server for Obsidian with all features including plugins
 const server = new Server(
   {
     name: 'obsidian-mcp',
@@ -25,6 +28,95 @@ const server = new Server(
 // Store discovered vaults and selected vault
 let discoveredVaults: string[] = [];
 let selectedVault: string | null = null;
+
+// Plugin instances
+let templaterPlugin: TemplaterPlugin | null = null;
+let bookSearchPlugin: BookSearchPlugin | null = null;
+
+// Store last book search results for easy selection
+let lastBookSearchResults: BookMetadata[] = [];
+
+// File locks for concurrent editing detection
+const fileLocks: Map<string, { timestamp: number; sessionId: string }> = new Map();
+const sessionId = crypto.randomBytes(16).toString('hex');
+
+// Helper function to parse frontmatter
+function parseFrontmatter(content: string): { metadata: any; body: string } {
+  const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+  const match = content.match(frontmatterRegex);
+  
+  if (match) {
+    const yamlContent = match[1];
+    const body = match[2];
+    const metadata: any = {};
+    
+    // Simple YAML parser for basic key-value pairs
+    yamlContent.split('\n').forEach(line => {
+      const kvMatch = line.match(/^(\w+):\s*(.*)$/);
+      if (kvMatch) {
+        const [, key, value] = kvMatch;
+        // Parse arrays
+        if (value.startsWith('[') && value.endsWith(']')) {
+          metadata[key] = value.slice(1, -1).split(',').map(v => v.trim());
+        } else {
+          metadata[key] = value;
+        }
+      }
+    });
+    
+    return { metadata, body };
+  }
+  
+  return { metadata: {}, body: content };
+}
+
+// Helper function to create frontmatter
+function createFrontmatter(metadata: any): string {
+  if (!metadata || Object.keys(metadata).length === 0) {
+    return '';
+  }
+  
+  let frontmatter = '---\n';
+  for (const [key, value] of Object.entries(metadata)) {
+    if (Array.isArray(value)) {
+      frontmatter += `${key}: [${value.join(', ')}]\n`;
+    } else {
+      frontmatter += `${key}: ${value}\n`;
+    }
+  }
+  frontmatter += '---\n\n';
+  
+  return frontmatter;
+}
+
+// Initialize plugins
+async function initializePlugins(): Promise<void> {
+  if (!selectedVault) return;
+  
+  // Initialize Templater plugin
+  templaterPlugin = new TemplaterPlugin(selectedVault);
+  
+  // Initialize Book Search plugin (with optional Google Books API key from env)
+  const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY;
+  bookSearchPlugin = new BookSearchPlugin(googleApiKey);
+}
+
+// Check if plugins are available
+async function checkPluginAvailability(): Promise<{ templater: boolean; bookSearch: boolean }> {
+  if (!selectedVault) {
+    return { templater: false, bookSearch: false };
+  }
+  
+  // Check for Templater templates folder
+  const templaterAvailable = await fs.access(path.join(selectedVault, 'Templates'))
+    .then(() => true)
+    .catch(() => false);
+  
+  // Book Search is always available (uses public APIs)
+  const bookSearchAvailable = true;
+  
+  return { templater: templaterAvailable, bookSearch: bookSearchAvailable };
+}
 
 // Find all Obsidian vaults
 async function findVaults(): Promise<string[]> {
@@ -52,21 +144,6 @@ async function findVaults(): Promise<string[]> {
     } catch (error) {
       // Ignore errors for non-existent paths
     }
-  }
-
-  // Also check config file
-  try {
-    const configPath = path.join(os.homedir(), '.obsidian-mcp', 'config.yaml');
-    const config = await fs.readFile(configPath, 'utf-8');
-    const match = config.match(/path:\s*"([^"]+)"/);
-    if (match) {
-      const vaultPath = match[1].replace('~', os.homedir());
-      if (!vaults.includes(vaultPath)) {
-        vaults.push(vaultPath);
-      }
-    }
-  } catch (error) {
-    // Config not found
   }
 
   return vaults;
@@ -104,243 +181,217 @@ async function scanForVaults(dir: string, vaults: string[], depth: number, maxDe
   }
 }
 
-// Analyze folder structure
-async function analyzeFolderStructure(vaultPath: string, relativePath: string = ''): Promise<any> {
-  const fullPath = path.join(vaultPath, relativePath);
-  const structure: any = {
-    name: relativePath || path.basename(vaultPath),
-    type: 'folder',
-    path: relativePath,
-    children: []
-  };
-
-  try {
-    const entries = await fs.readdir(fullPath, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue; // Skip hidden files
-      
-      const entryPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
-      
-      if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules' && entry.name !== '.obsidian' && entry.name !== '.trash') {
-          const subFolder = await analyzeFolderStructure(vaultPath, entryPath);
-          structure.children.push(subFolder);
-        }
-      } else if (entry.name.endsWith('.md')) {
-        structure.children.push({
-          name: entry.name,
-          type: 'file',
-          path: entryPath
-        });
-      }
-    }
-    
-    // Sort: folders first, then files
-    structure.children.sort((a: any, b: any) => {
-      if (a.type === b.type) return a.name.localeCompare(b.name);
-      return a.type === 'folder' ? -1 : 1;
-    });
-    
-  } catch (error) {
-    console.error(`Error reading ${fullPath}:`, error);
-  }
-
-  return structure;
-}
-
-// Format folder structure as tree
-function formatTree(node: any, prefix: string = '', isLast: boolean = true): string {
-  let result = '';
-  
-  if (node.name) {
-    const connector = isLast ? '└── ' : '├── ';
-    const icon = node.type === 'folder' ? '📁 ' : '📄 ';
-    result += prefix + connector + icon + node.name + '\n';
-  }
-  
-  if (node.children && node.children.length > 0) {
-    const childPrefix = node.name ? (prefix + (isLast ? '    ' : '│   ')) : '';
-    node.children.forEach((child: any, index: number) => {
-      const isLastChild = index === node.children.length - 1;
-      result += formatTree(child, childPrefix, isLastChild);
-    });
-  }
-  
-  return result;
-}
-
-// Get statistics about vault
-async function getVaultStats(vaultPath: string): Promise<any> {
-  let totalNotes = 0;
-  let totalFolders = 0;
-  let totalSize = 0;
-  const tagCounts: Map<string, number> = new Map();
-  
-  async function walkDir(dir: string): Promise<void> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      
-      if (entry.isDirectory()) {
-        if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          totalFolders++;
-          await walkDir(fullPath);
-        }
-      } else if (entry.name.endsWith('.md')) {
-        totalNotes++;
-        const stats = await fs.stat(fullPath);
-        totalSize += stats.size;
-        
-        // Extract tags
-        try {
-          const content = await fs.readFile(fullPath, 'utf-8');
-          const tags = content.match(/#[a-zA-Z0-9_\-\/]+/g) || [];
-          tags.forEach(tag => {
-            tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-          });
-        } catch (error) {
-          // Ignore read errors
-        }
-      }
-    }
-  }
-  
-  await walkDir(vaultPath);
-  
-  const topTags = Array.from(tagCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([tag, count]) => `${tag} (${count})`);
-  
-  return {
-    totalNotes,
-    totalFolders,
-    totalSize: `${(totalSize / 1024 / 1024).toFixed(2)} MB`,
-    topTags
-  };
-}
-
 // Tool definitions
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
+  const pluginStatus = await checkPluginAvailability();
+  
+  const tools = [
+    {
+      name: 'list_vaults',
+      description: 'List all discovered Obsidian vaults on the system',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'select_vault',
+      description: 'Select a specific vault to work with',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          vault_path: {
+            type: 'string',
+            description: 'The path to the vault to select',
+          },
+        },
+        required: ['vault_path'],
+      },
+    },
+    {
+      name: 'create_note',
+      description: 'Create a new note with optional frontmatter',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'The title of the note',
+          },
+          content: {
+            type: 'string',
+            description: 'The content of the note',
+          },
+          folder: {
+            type: 'string',
+            description: 'The folder to create the note in',
+          },
+          metadata: {
+            type: 'object',
+            description: 'Frontmatter metadata (tags, date, etc)',
+          },
+        },
+        required: ['title', 'content'],
+      },
+    },
+  ];
+  
+  // Add Templater tools if available
+  if (pluginStatus.templater) {
+    tools.push(
       {
-        name: 'list_vaults',
-        description: 'List all discovered Obsidian vaults on the system',
+        name: 'list_templates',
+        description: 'List available Templater templates',
         inputSchema: {
           type: 'object',
           properties: {},
         },
       },
       {
-        name: 'select_vault',
-        description: 'Select a specific vault to work with',
+        name: 'create_from_template',
+        description: 'Create a note from a Templater template',
         inputSchema: {
           type: 'object',
           properties: {
-            vault_path: {
+            template_name: {
               type: 'string',
-              description: 'The path to the vault to select',
+              description: 'Name of the template to use',
+            },
+            title: {
+              type: 'string',
+              description: 'Title for the new note',
+            },
+            folder: {
+              type: 'string',
+              description: 'Folder to create the note in',
+            },
+            variables: {
+              type: 'array',
+              description: 'Custom variables for the template',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  value: { type: 'string' },
+                },
+              },
             },
           },
-          required: ['vault_path'],
+          required: ['template_name', 'title'],
         },
       },
       {
-        name: 'analyze_vault',
-        description: 'Analyze the folder structure and statistics of the selected vault',
+        name: 'process_template',
+        description: 'Process a template string with Templater syntax',
         inputSchema: {
           type: 'object',
           properties: {
-            show_tree: {
-              type: 'boolean',
-              description: 'Show folder tree structure',
-              default: true,
+            template: {
+              type: 'string',
+              description: 'Template string with Templater syntax',
             },
-            show_stats: {
-              type: 'boolean',
-              description: 'Show vault statistics',
-              default: true,
+            variables: {
+              type: 'array',
+              description: 'Variables to replace in the template',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  value: { type: 'string' },
+                },
+              },
             },
           },
+          required: ['template'],
+        },
+      }
+    );
+  }
+  
+  // Add Book Search tools if available
+  if (pluginStatus.bookSearch) {
+    tools.push(
+      {
+        name: 'search_book_by_isbn',
+        description: 'Search for a book by ISBN',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            isbn: {
+              type: 'string',
+              description: 'ISBN-10 or ISBN-13',
+            },
+            create_note: {
+              type: 'boolean',
+              description: 'Create a note for the book',
+              default: false,
+            },
+            template: {
+              type: 'string',
+              description: 'Template name for the book note',
+            },
+            folder: {
+              type: 'string',
+              description: 'Folder for the book note',
+              default: 'Books',
+            },
+          },
+          required: ['isbn'],
         },
       },
       {
-        name: 'create_note',
-        description: 'Create a new note in the selected vault',
+        name: 'search_book_by_title',
+        description: 'Search for books by title and optionally author',
         inputSchema: {
           type: 'object',
           properties: {
             title: {
               type: 'string',
-              description: 'The title of the note',
+              description: 'Book title to search for',
             },
-            content: {
+            author: {
               type: 'string',
-              description: 'The content of the note',
+              description: 'Author name (optional)',
             },
-            folder: {
-              type: 'string',
-              description: 'The folder to create the note in',
+            max_results: {
+              type: 'number',
+              description: 'Maximum number of results',
+              default: 5,
             },
           },
-          required: ['title', 'content'],
+          required: ['title'],
         },
       },
       {
-        name: 'read_note',
-        description: 'Read a note from the selected vault',
+        name: 'create_book_note',
+        description: 'Create a note from book metadata or search result',
         inputSchema: {
           type: 'object',
           properties: {
-            path: {
-              type: 'string',
-              description: 'The path to the note (relative to vault root)',
+            book_data: {
+              type: 'object',
+              description: 'Book metadata object (from search results)',
             },
-          },
-          required: ['path'],
-        },
-      },
-      {
-        name: 'list_notes',
-        description: 'List notes in a specific folder',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            folder: {
-              type: 'string',
-              description: 'The folder to list notes from (relative to vault root)',
+            option_number: {
+              type: 'number',
+              description: 'Option number from previous search (1-5)',
             },
-            recursive: {
-              type: 'boolean',
-              description: 'Include notes from subfolders',
-              default: false,
-            },
-          },
-        },
-      },
-      {
-        name: 'search_notes',
-        description: 'Search for notes containing specific text',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
+            template: {
               type: 'string',
-              description: 'Search query',
+              description: 'Template to use for the note',
             },
             folder: {
               type: 'string',
-              description: 'Limit search to specific folder',
+              description: 'Folder for the note',
+              default: 'Books',
             },
           },
-          required: ['query'],
         },
-      },
-    ],
-  };
+      }
+    );
+  }
+  
+  return { tools };
 });
 
 // Tool handlers
@@ -356,7 +407,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No Obsidian vaults found. Please create a vault first or check the paths.',
+              text: 'No Obsidian vaults found. Please create a vault first.',
             },
           ],
         };
@@ -384,16 +435,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         
         selectedVault = vault_path;
+        await initializePlugins();
         
-        // Quick stats
-        const entries = await fs.readdir(vault_path);
-        const mdFiles = entries.filter(e => e.endsWith('.md'));
+        const pluginStatus = await checkPluginAvailability();
         
         return {
           content: [
             {
               type: 'text',
-              text: `Vault selected: ${vault_path}\n\nQuick info:\n- ${mdFiles.length} markdown files in root\n- Vault name: ${path.basename(vault_path)}\n\nYou can now use analyze_vault to see the full structure.`,
+              text: `Vault selected: ${vault_path}\n\nVault name: ${path.basename(vault_path)}\n\nPlugins available:\n- Templater: ${pluginStatus.templater ? '✅' : '❌'}\n- Book Search: ${pluginStatus.bookSearch ? '✅' : '❌'}`,
             },
           ],
         };
@@ -402,49 +452,230 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Error: Could not access vault at ${vault_path}. Please check the path.`,
+              text: `Error: Could not access vault at ${vault_path}`,
             },
           ],
         };
       }
     }
 
-    case 'analyze_vault': {
-      if (!selectedVault) {
+    case 'list_templates': {
+      if (!selectedVault || !templaterPlugin) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+              text: 'No vault selected or Templater not available.',
             },
           ],
         };
       }
       
-      const { show_tree = true, show_stats = true } = args as any;
-      let result = `# Vault Analysis: ${path.basename(selectedVault)}\n\n`;
+      const templates = await templaterPlugin.listTemplates();
       
-      if (show_stats) {
-        const stats = await getVaultStats(selectedVault);
-        result += '## Statistics\n';
-        result += `- Total Notes: ${stats.totalNotes}\n`;
-        result += `- Total Folders: ${stats.totalFolders}\n`;
-        result += `- Total Size: ${stats.totalSize}\n`;
-        
-        if (stats.topTags.length > 0) {
-          result += `\n### Top Tags\n`;
-          stats.topTags.forEach((tag: string) => {
-            result += `- ${tag}\n`;
-          });
-        }
-        result += '\n';
+      if (templates.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No templates found in the Templates folder.',
+            },
+          ],
+        };
       }
       
-      if (show_tree) {
-        const structure = await analyzeFolderStructure(selectedVault);
-        result += '## Folder Structure\n```\n';
-        result += formatTree(structure);
-        result += '```\n';
+      let result = `Found ${templates.length} template(s):\n\n`;
+      templates.forEach(t => {
+        result += `📝 ${t.name}`;
+        if (t.description) {
+          result += ` - ${t.description}`;
+        }
+        result += '\n';
+      });
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    }
+
+    case 'create_from_template': {
+      if (!selectedVault || !templaterPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Templater not available.',
+            },
+          ],
+        };
+      }
+      
+      const { template_name, title, folder = '', variables = [] } = args as any;
+      const notePath = path.join(folder, `${title}.md`);
+      
+      const templaterVars: TemplaterVariable[] = variables.map((v: any) => ({
+        name: v.name,
+        value: v.value,
+      }));
+      
+      const result = await templaterPlugin.createNoteFromTemplate(
+        template_name,
+        notePath,
+        templaterVars
+      );
+      
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Note created from template!\n\nTemplate: ${template_name}\nPath: ${result.path}`,
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${result.error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'process_template': {
+      if (!selectedVault || !templaterPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Templater not available.',
+            },
+          ],
+        };
+      }
+      
+      const { template, variables = [] } = args as any;
+      
+      const templaterVars: TemplaterVariable[] = variables.map((v: any) => ({
+        name: v.name,
+        value: v.value,
+      }));
+      
+      const processed = templaterPlugin.processTemplate(template, templaterVars);
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: processed,
+          },
+        ],
+      };
+    }
+
+    case 'search_book_by_isbn': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { isbn, create_note = false, template, folder = 'Books' } = args as any;
+      
+      // First try exact ISBN search
+      let book = await bookSearchPlugin.searchByISBN(isbn);
+      
+      if (!book) {
+        // If ISBN search fails, try title search with the ISBN (sometimes books are listed differently)
+        const alternativeResults = await bookSearchPlugin.searchByTitle(isbn);
+        
+        if (alternativeResults.length > 0) {
+          // Show up to 5 alternatives
+          const limitedResults = alternativeResults.slice(0, 5);
+          let result = `Direct ISBN search failed, but found ${limitedResults.length} possible match(es):\n\n`;
+          
+          // Store results for easy selection
+          lastBookSearchResults = limitedResults;
+          
+          limitedResults.forEach((b, index) => {
+            result += `## 📚 Option ${index + 1}: ${b.title}\n`;
+            result += `- **Author**: ${b.author.join(', ')}\n`;
+            if (b.isbn && b.isbn !== isbn) result += `- **ISBN**: ${b.isbn}\n`;
+            if (b.publishedDate) result += `- **Published**: ${b.publishedDate}\n`;
+            if (b.publisher) result += `- **Publisher**: ${b.publisher}\n`;
+            if (b.pageCount) result += `- **Pages**: ${b.pageCount}\n`;
+            if (b.rating) result += `- **Rating**: ${b.rating}/5\n`;
+            result += '\n';
+          });
+          
+          result += `\n💡 **To create a note**: Use 'create_book_note' with option_number: 1-${limitedResults.length}`;
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: result,
+              },
+            ],
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `No book found with ISBN: ${isbn}`,
+            },
+          ],
+        };
+      }
+      
+      let result = `Found book:\n\n${bookSearchPlugin.formatAsMarkdown(book)}`;
+      
+      if (create_note && selectedVault) {
+        const noteTitle = `${book.title} - ${book.author.join(', ')}`;
+        const notePath = path.join(selectedVault, folder, `${noteTitle}.md`);
+        
+        let content: string;
+        if (template && templaterPlugin) {
+          const templateContent = await templaterPlugin.getTemplate(template);
+          if (templateContent) {
+            content = bookSearchPlugin.formatAsMarkdown(book, templateContent);
+          } else {
+            content = bookSearchPlugin.formatAsMarkdown(book);
+          }
+        } else {
+          content = bookSearchPlugin.formatAsMarkdown(book);
+        }
+        
+        // Add metadata
+        const metadata = {
+          tags: ['book', 'reading'],
+          isbn: book.isbn,
+          author: book.author,
+          rating: book.rating,
+          created: new Date().toISOString(),
+        };
+        
+        const fullContent = createFrontmatter(metadata) + content;
+        
+        await fs.mkdir(path.dirname(notePath), { recursive: true });
+        await fs.writeFile(notePath, fullContent, 'utf-8');
+        
+        result += `\n\nNote created at: ${path.relative(selectedVault, notePath)}`;
       }
       
       return {
@@ -452,6 +683,212 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: 'text',
             text: result,
+          },
+        ],
+      };
+    }
+
+    case 'search_book_by_title': {
+      if (!bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Book Search plugin not available.',
+            },
+          ],
+        };
+      }
+      
+      const { title, author, max_results = 5 } = args as any;
+      
+      const books = await bookSearchPlugin.searchByTitle(title, author);
+      
+      if (books.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `No books found for: ${title}${author ? ` by ${author}` : ''}`,
+            },
+          ],
+        };
+      }
+      
+      const limitedBooks = books.slice(0, Math.min(max_results, 5));
+      
+      // Store results for easy selection
+      lastBookSearchResults = limitedBooks;
+      
+      let result = `Found ${books.length} book(s), showing top ${limitedBooks.length}:\n\n`;
+      
+      limitedBooks.forEach((book, index) => {
+        result += `## 📚 Option ${index + 1}: ${book.title}\n`;
+        result += `- **Author(s)**: ${book.author.join(', ')}\n`;
+        if (book.isbn) result += `- **ISBN**: ${book.isbn}\n`;
+        if (book.publishedDate) result += `- **Published**: ${book.publishedDate}\n`;
+        if (book.publisher) result += `- **Publisher**: ${book.publisher}\n`;
+        if (book.pageCount) result += `- **Pages**: ${book.pageCount}\n`;
+        if (book.categories && book.categories.length > 0) {
+          result += `- **Categories**: ${book.categories.slice(0, 3).join(', ')}\n`;
+        }
+        if (book.rating) result += `- **Rating**: ⭐ ${book.rating}/5\n`;
+        if (book.description) {
+          const shortDesc = book.description.length > 200 
+            ? book.description.substring(0, 200) + '...' 
+            : book.description;
+          result += `- **Description**: ${shortDesc}\n`;
+        }
+        result += '\n';
+      });
+      
+      result += `---\n\n`;
+      result += `💡 **Next Steps:**\n`;
+      result += `1. To create a note: Use 'create_book_note' with **option_number: 1-${limitedBooks.length}**\n`;
+      result += `   Example: create_book_note(option_number: 1)\n`;
+      result += `2. To search by ISBN for more accurate results, use 'search_book_by_isbn'\n`;
+      result += `3. To refine your search, try adding the author name or being more specific\n`;
+      
+      if (books.length > max_results) {
+        result += `\n📊 *Showing ${limitedBooks.length} of ${books.length} total results. Adjust max_results parameter to see more.*`;
+      }
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    }
+
+    case 'create_book_note': {
+      if (!selectedVault || !bookSearchPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected or Book Search not available.',
+            },
+          ],
+        };
+      }
+      
+      const { book_data, option_number, template, folder = 'Books' } = args as any;
+      
+      // Verify template exists if specified
+      if (template && templaterPlugin) {
+        const templates = await templaterPlugin.listTemplates();
+        const templateExists = templates.some(t => 
+          t.name.toLowerCase() === template.toLowerCase() || 
+          t.name.toLowerCase() === `${template.toLowerCase()}.md`
+        );
+        
+        if (!templateExists) {
+          const availableTemplates = templates.map(t => t.name).join('\n- ');
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Template '${template}' not found.\n\nAvailable templates:\n- ${availableTemplates}\n\nPlease use one of the available templates or create the template first.`,
+              },
+            ],
+          };
+        }
+      }
+      
+      let book: BookMetadata;
+      
+      // Check if using option_number from last search
+      if (option_number && !book_data) {
+        if (lastBookSearchResults.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'No recent search results. Please search for a book first.',
+              },
+            ],
+          };
+        }
+        
+        const index = option_number - 1;
+        if (index < 0 || index >= lastBookSearchResults.length) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Invalid option number. Please choose between 1 and ${lastBookSearchResults.length}`,
+              },
+            ],
+          };
+        }
+        
+        book = lastBookSearchResults[index];
+      } else if (book_data) {
+        book = book_data as BookMetadata;
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Please provide either book_data or option_number from a previous search.',
+            },
+          ],
+        };
+      }
+      
+      const noteTitle = `${book.title} - ${book.author.join(', ')}`;
+      const notePath = path.join(selectedVault, folder, `${noteTitle}.md`);
+      
+      let content: string;
+      let useDefaultFormat = true;
+      
+      if (template && templaterPlugin) {
+        const templateContent = await templaterPlugin.getTemplate(template);
+        if (templateContent) {
+          // Use template format ONLY - no additional formatting
+          content = bookSearchPlugin.formatAsMarkdown(book, templateContent);
+          useDefaultFormat = false;
+        }
+      }
+      
+      if (useDefaultFormat) {
+        // Only use default format if no template is specified or found
+        if (template) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Template '${template}' was specified but no template content found. Please create the template first or use 'list_templates' to see available templates.`,
+              },
+            ],
+          };
+        }
+        content = bookSearchPlugin.formatAsMarkdown(book);
+        
+        // Add metadata only for default format
+        const metadata = {
+          tags: ['book', 'reading'],
+          isbn: book.isbn,
+          author: book.author,
+          rating: book.rating,
+          created: new Date().toISOString(),
+        };
+        content = createFrontmatter(metadata) + content;
+      }
+      
+      const fullContent = content;
+      
+      await fs.mkdir(path.dirname(notePath), { recursive: true });
+      await fs.writeFile(notePath, fullContent, 'utf-8');
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Book note created${template ? ` using template '${template}'` : ''}!\n\nTitle: ${book.title}\nPath: ${path.relative(selectedVault, notePath)}`,
           },
         ],
       };
@@ -469,207 +906,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       
-      const { title, content, folder = '' } = args as any;
+      const { title, content, folder = '', metadata } = args as any;
       const notePath = path.join(selectedVault, folder, `${title}.md`);
       
       // Create directory if needed
       const dir = path.dirname(notePath);
       await fs.mkdir(dir, { recursive: true });
       
+      // Build note content with frontmatter
+      let fullContent = '';
+      if (metadata && Object.keys(metadata).length > 0) {
+        if (!metadata.created) {
+          metadata.created = new Date().toISOString();
+        }
+        fullContent = createFrontmatter(metadata);
+      }
+      fullContent += content;
+      
       // Write the note
-      await fs.writeFile(notePath, content, 'utf-8');
+      await fs.writeFile(notePath, fullContent, 'utf-8');
       
       return {
         content: [
           {
             type: 'text',
-            text: `Note created successfully!\n\nPath: ${path.relative(selectedVault, notePath)}\nVault: ${path.basename(selectedVault)}`,
-          },
-        ],
-      };
-    }
-
-    case 'read_note': {
-      if (!selectedVault) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
-            },
-          ],
-        };
-      }
-      
-      const { path: notePath } = args as any;
-      const fullPath = path.join(selectedVault, notePath.endsWith('.md') ? notePath : `${notePath}.md`);
-      
-      try {
-        const content = await fs.readFile(fullPath, 'utf-8');
-        const stats = await fs.stat(fullPath);
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `# Note: ${path.basename(fullPath)}\n\nPath: ${notePath}\nModified: ${stats.mtime.toLocaleString()}\nSize: ${stats.size} bytes\n\n---\n\n${content}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: Note not found at ${notePath}`,
-            },
-          ],
-        };
-      }
-    }
-
-    case 'list_notes': {
-      if (!selectedVault) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
-            },
-          ],
-        };
-      }
-      
-      const { folder = '', recursive = false } = args as any;
-      const searchPath = path.join(selectedVault, folder);
-      
-      async function findMdFiles(dir: string, baseDir: string): Promise<string[]> {
-        const files: string[] = [];
-        try {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-          
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            
-            if (entry.isDirectory() && recursive && !entry.name.startsWith('.')) {
-              const subFiles = await findMdFiles(fullPath, baseDir);
-              files.push(...subFiles);
-            } else if (entry.isFile() && entry.name.endsWith('.md')) {
-              files.push(path.relative(baseDir, fullPath));
-            }
-          }
-        } catch (error) {
-          // Ignore errors
-        }
-        return files;
-      }
-      
-      const mdFiles = await findMdFiles(searchPath, selectedVault);
-      
-      if (mdFiles.length === 0) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `No notes found in ${folder || 'vault root'}`,
-            },
-          ],
-        };
-      }
-      
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Found ${mdFiles.length} note(s) in ${folder || 'vault root'}:\n\n${mdFiles.join('\n')}`,
-          },
-        ],
-      };
-    }
-
-    case 'search_notes': {
-      if (!selectedVault) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
-            },
-          ],
-        };
-      }
-      
-      const { query, folder = '' } = args as any;
-      const searchPath = path.join(selectedVault, folder);
-      const results: Array<{ path: string; matches: string[] }> = [];
-      
-      async function searchInDir(dir: string): Promise<void> {
-        try {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-          
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            
-            if (entry.isDirectory() && !entry.name.startsWith('.')) {
-              await searchInDir(fullPath);
-            } else if (entry.isFile() && entry.name.endsWith('.md')) {
-              const content = await fs.readFile(fullPath, 'utf-8');
-              const lines = content.split('\n');
-              const matches: string[] = [];
-              
-              lines.forEach((line, i) => {
-                if (line.toLowerCase().includes(query.toLowerCase())) {
-                  matches.push(`Line ${i + 1}: ${line.trim()}`);
-                }
-              });
-              
-              if (matches.length > 0) {
-                results.push({
-                  path: path.relative(selectedVault, fullPath),
-                  matches: matches.slice(0, 3), // Show first 3 matches
-                });
-              }
-            }
-          }
-        } catch (error) {
-          // Ignore errors
-        }
-      }
-      
-      await searchInDir(searchPath);
-      
-      if (results.length === 0) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `No results found for "${query}"`,
-            },
-          ],
-        };
-      }
-      
-      let resultText = `Found "${query}" in ${results.length} note(s):\n\n`;
-      results.forEach(r => {
-        resultText += `📄 ${r.path}\n`;
-        r.matches.forEach(m => {
-          resultText += `   ${m}\n`;
-        });
-        resultText += '\n';
-      });
-      
-      return {
-        content: [
-          {
-            type: 'text',
-            text: resultText,
+            text: `Note created successfully!\n\nPath: ${path.relative(selectedVault, notePath)}`,
           },
         ],
       };
     }
 
     default:
-      throw new Error(`Unknown tool: ${name}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Unknown tool: ${name}`,
+          },
+        ],
+      };
   }
 });
 
@@ -677,7 +952,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('ObsidianMCP Enhanced Server running...');
+  console.error('ObsidianMCP Full Server running with all features including plugins...');
 }
 
 main().catch((error) => {

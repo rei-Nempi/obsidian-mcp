@@ -777,6 +777,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       const { book_data, option_number, template, folder = 'Books' } = args as any;
       
+      // Verify template exists if specified
+      if (template && templaterPlugin) {
+        const templates = await templaterPlugin.listTemplates();
+        const templateExists = templates.some(t => 
+          t.name.toLowerCase() === template.toLowerCase() || 
+          t.name.toLowerCase() === `${template.toLowerCase()}.md`
+        );
+        
+        if (!templateExists) {
+          const availableTemplates = templates.map(t => t.name).join('\n- ');
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Template '${template}' not found.\n\nAvailable templates:\n- ${availableTemplates}\n\nPlease use one of the available templates or create the template first.`,
+              },
+            ],
+          };
+        }
+      }
+      
       let book: BookMetadata;
       
       // Check if using option_number from last search
@@ -822,27 +843,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const notePath = path.join(selectedVault, folder, `${noteTitle}.md`);
       
       let content: string;
+      let useDefaultFormat = true;
+      
       if (template && templaterPlugin) {
         const templateContent = await templaterPlugin.getTemplate(template);
         if (templateContent) {
+          // Use template format ONLY - no additional formatting
           content = bookSearchPlugin.formatAsMarkdown(book, templateContent);
-        } else {
-          content = bookSearchPlugin.formatAsMarkdown(book);
+          useDefaultFormat = false;
         }
-      } else {
-        content = bookSearchPlugin.formatAsMarkdown(book);
       }
       
-      // Add metadata
-      const metadata = {
-        tags: ['book', 'reading'],
-        isbn: book.isbn,
-        author: book.author,
-        rating: book.rating,
-        created: new Date().toISOString(),
-      };
+      if (useDefaultFormat) {
+        // Only use default format if no template is specified or found
+        if (template) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Template '${template}' was specified but no template content found. Please create the template first or use 'list_templates' to see available templates.`,
+              },
+            ],
+          };
+        }
+        content = bookSearchPlugin.formatAsMarkdown(book);
+        
+        // Add metadata only for default format
+        const metadata = {
+          tags: ['book', 'reading'],
+          isbn: book.isbn,
+          author: book.author,
+          rating: book.rating,
+          created: new Date().toISOString(),
+        };
+        content = createFrontmatter(metadata) + content;
+      }
       
-      const fullContent = createFrontmatter(metadata) + content;
+      const fullContent = content;
       
       await fs.mkdir(path.dirname(notePath), { recursive: true });
       await fs.writeFile(notePath, fullContent, 'utf-8');
@@ -851,7 +888,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: 'text',
-            text: `Book note created!\n\nTitle: ${book.title}\nPath: ${path.relative(selectedVault, notePath)}`,
+            text: `Book note created${template ? ` using template '${template}'` : ''}!\n\nTitle: ${book.title}\nPath: ${path.relative(selectedVault, notePath)}`,
           },
         ],
       };

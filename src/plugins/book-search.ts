@@ -239,18 +239,31 @@ export class BookSearchPlugin {
 
   formatAsMarkdown(book: BookMetadata, template?: string): string {
     if (template) {
-      // Process template with book metadata
+      // Process template with book metadata - template format takes precedence
+      // Support multiple variable formats for compatibility
       return template
+        // Basic metadata
         .replace(/\{\{title\}\}/g, book.title)
         .replace(/\{\{author\}\}/g, book.author.join(', '))
+        .replace(/\{\{authors\}\}/g, book.author.join(', '))
         .replace(/\{\{isbn\}\}/g, book.isbn || '')
         .replace(/\{\{publisher\}\}/g, book.publisher || '')
         .replace(/\{\{publishedDate\}\}/g, book.publishedDate || '')
+        .replace(/\{\{published_date\}\}/g, book.publishedDate || '')
+        .replace(/\{\{publishDate\}\}/g, book.publishedDate || '')
         .replace(/\{\{description\}\}/g, book.description || '')
         .replace(/\{\{pageCount\}\}/g, String(book.pageCount || ''))
+        .replace(/\{\{pages\}\}/g, String(book.pageCount || ''))
         .replace(/\{\{categories\}\}/g, book.categories?.join(', ') || '')
+        .replace(/\{\{category\}\}/g, book.categories?.[0] || '')
         .replace(/\{\{rating\}\}/g, String(book.rating || ''))
-        .replace(/\{\{thumbnail\}\}/g, book.thumbnail || '');
+        .replace(/\{\{thumbnail\}\}/g, book.thumbnail || '')
+        .replace(/\{\{cover\}\}/g, book.thumbnail || '')
+        .replace(/\{\{language\}\}/g, book.language || '')
+        // Date formatting
+        .replace(/\{\{date\}\}/g, new Date().toISOString().split('T')[0])
+        .replace(/\{\{today\}\}/g, new Date().toISOString().split('T')[0])
+        .replace(/\{\{timestamp\}\}/g, new Date().toISOString());
     }
     
     // Default format
