@@ -207,7 +207,6 @@ Claude Desktopの設定ファイルを見つけます：
 | ----------- | ----------------------------------------------------------------- |
 | **Mac**     | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | **Windows** | `%APPDATA%\Claude\claude_desktop_config.json`                     |
-| **Linux**   | `~/.config/Claude/claude_desktop_config.json`                     |
 
 Open the file and add the following configuration:
 ファイルを開いて以下の設定を追加します：
