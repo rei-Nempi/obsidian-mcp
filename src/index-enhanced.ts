@@ -234,6 +234,111 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         required: ['title', 'content'],
       },
     },
+    {
+      name: 'delete_note',
+      description: 'Delete a note from the vault',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note file (relative to vault root)',
+          },
+          title: {
+            type: 'string',
+            description: 'Title of the note (alternative to path)',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder containing the note (used with title)',
+          },
+          confirm: {
+            type: 'boolean',
+            description: 'Skip confirmation prompt',
+            default: false,
+          },
+          trash: {
+            type: 'boolean',
+            description: 'Move to .trash folder instead of permanent deletion',
+            default: true,
+          },
+        },
+      },
+    },
+    {
+      name: 'read_note',
+      description: 'Read the content of a note',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note file (relative to vault root)',
+          },
+          title: {
+            type: 'string',
+            description: 'Title of the note (alternative to path)',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder containing the note (used with title)',
+          },
+        },
+      },
+    },
+    {
+      name: 'update_note',
+      description: 'Update the content of an existing note',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note file (relative to vault root)',
+          },
+          title: {
+            type: 'string',
+            description: 'Title of the note (alternative to path)',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder containing the note (used with title)',
+          },
+          content: {
+            type: 'string',
+            description: 'New content for the note',
+          },
+          append: {
+            type: 'boolean',
+            description: 'Append to existing content instead of replacing',
+            default: false,
+          },
+          metadata: {
+            type: 'object',
+            description: 'Update frontmatter metadata',
+          },
+        },
+        required: ['content'],
+      },
+    },
+    {
+      name: 'list_notes',
+      description: 'List notes in a folder or entire vault',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: 'Folder to list notes from (empty for entire vault)',
+          },
+          recursive: {
+            type: 'boolean',
+            description: 'Include notes from subfolders',
+            default: true,
+          },
+        },
+      },
+    },
   ];
   
   // Add Templater tools if available
@@ -931,6 +1036,335 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: 'text',
             text: `Note created successfully!\n\nPath: ${path.relative(selectedVault, notePath)}`,
+          },
+        ],
+      };
+    }
+
+    case 'delete_note': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+
+      const { path: notePath, title, folder = '', confirm = false, trash = true } = args as any;
+      
+      // Determine the file path
+      let targetPath: string;
+      if (notePath) {
+        targetPath = path.join(selectedVault, notePath);
+      } else if (title) {
+        const fileName = title.endsWith('.md') ? title : `${title}.md`;
+        targetPath = path.join(selectedVault, folder, fileName);
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Please provide either "path" or "title" to identify the note to delete.',
+            },
+          ],
+        };
+      }
+
+      // Check if file exists
+      try {
+        await fs.access(targetPath);
+      } catch {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Note not found: ${path.relative(selectedVault, targetPath)}`,
+            },
+          ],
+        };
+      }
+
+      // Read the file to show what will be deleted
+      const content = await fs.readFile(targetPath, 'utf-8');
+      const lines = content.split('\n').slice(0, 5);
+      const preview = lines.join('\n') + (content.split('\n').length > 5 ? '\n...' : '');
+
+      if (!confirm) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `⚠️ Confirm deletion of note:\n\nPath: ${path.relative(selectedVault, targetPath)}\n\nPreview:\n${preview}\n\nTo confirm deletion, use the same command with "confirm: true"`,
+            },
+          ],
+        };
+      }
+
+      if (trash) {
+        // Move to trash folder
+        const trashDir = path.join(selectedVault, '.trash');
+        await fs.mkdir(trashDir, { recursive: true });
+        
+        const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+        const trashName = `${path.basename(targetPath, '.md')}_${timestamp}.md`;
+        const trashPath = path.join(trashDir, trashName);
+        
+        await fs.rename(targetPath, trashPath);
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Note moved to trash successfully!\n\nOriginal: ${path.relative(selectedVault, targetPath)}\nTrash: ${path.relative(selectedVault, trashPath)}`,
+            },
+          ],
+        };
+      } else {
+        // Permanent deletion
+        await fs.unlink(targetPath);
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Note permanently deleted!\n\nPath: ${path.relative(selectedVault, targetPath)}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'read_note': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+
+      const { path: notePath, title, folder = '' } = args as any;
+      
+      // Determine the file path
+      let targetPath: string;
+      if (notePath) {
+        targetPath = path.join(selectedVault, notePath);
+      } else if (title) {
+        const fileName = title.endsWith('.md') ? title : `${title}.md`;
+        targetPath = path.join(selectedVault, folder, fileName);
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Please provide either "path" or "title" to identify the note to read.',
+            },
+          ],
+        };
+      }
+
+      // Read the file
+      try {
+        const content = await fs.readFile(targetPath, 'utf-8');
+        const { metadata, body } = parseFrontmatter(content);
+        
+        let result = `# Note: ${path.basename(targetPath, '.md')}\n\n`;
+        result += `**Path**: ${path.relative(selectedVault, targetPath)}\n\n`;
+        
+        if (Object.keys(metadata).length > 0) {
+          result += `## Metadata\n`;
+          for (const [key, value] of Object.entries(metadata)) {
+            result += `- **${key}**: ${Array.isArray(value) ? value.join(', ') : value}\n`;
+          }
+          result += '\n';
+        }
+        
+        result += `## Content\n\n${body}`;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error reading note: ${path.relative(selectedVault, targetPath)}\n\n${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'update_note': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+
+      const { path: notePath, title, folder = '', content: newContent, append = false, metadata: newMetadata } = args as any;
+      
+      // Determine the file path
+      let targetPath: string;
+      if (notePath) {
+        targetPath = path.join(selectedVault, notePath);
+      } else if (title) {
+        const fileName = title.endsWith('.md') ? title : `${title}.md`;
+        targetPath = path.join(selectedVault, folder, fileName);
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Please provide either "path" or "title" to identify the note to update.',
+            },
+          ],
+        };
+      }
+
+      // Check if file exists
+      let existingContent = '';
+      let existingMetadata = {};
+      
+      try {
+        existingContent = await fs.readFile(targetPath, 'utf-8');
+        const parsed = parseFrontmatter(existingContent);
+        existingMetadata = parsed.metadata;
+        if (append) {
+          existingContent = parsed.body;
+        }
+      } catch {
+        // File doesn't exist, will create new
+      }
+
+      // Merge metadata if provided
+      const finalMetadata = newMetadata ? { ...existingMetadata, ...newMetadata } : existingMetadata;
+      if (!finalMetadata.modified) {
+        finalMetadata.modified = new Date().toISOString();
+      }
+
+      // Build final content
+      let fullContent = '';
+      if (Object.keys(finalMetadata).length > 0) {
+        fullContent = createFrontmatter(finalMetadata);
+      }
+      
+      if (append && existingContent) {
+        fullContent += existingContent + '\n\n' + newContent;
+      } else {
+        fullContent += newContent;
+      }
+
+      // Write the updated note
+      await fs.writeFile(targetPath, fullContent, 'utf-8');
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Note updated successfully!\n\nPath: ${path.relative(selectedVault, targetPath)}\nMode: ${append ? 'Append' : 'Replace'}`,
+          },
+        ],
+      };
+    }
+
+    case 'list_notes': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+            },
+          ],
+        };
+      }
+
+      const { folder = '', recursive = true } = args as any;
+      const searchDir = path.join(selectedVault, folder);
+      
+      // Function to recursively find markdown files
+      async function findMarkdownFiles(dir: string, baseDir: string): Promise<string[]> {
+        const files: string[] = [];
+        
+        try {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            
+            if (entry.isDirectory() && !entry.name.startsWith('.')) {
+              if (recursive) {
+                const subFiles = await findMarkdownFiles(fullPath, baseDir);
+                files.push(...subFiles);
+              }
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              files.push(path.relative(baseDir, fullPath));
+            }
+          }
+        } catch (error) {
+          // Directory doesn't exist or permission error
+        }
+        
+        return files;
+      }
+
+      const notes = await findMarkdownFiles(searchDir, selectedVault);
+      
+      if (notes.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `No notes found in ${folder || 'vault root'}`,
+            },
+          ],
+        };
+      }
+
+      // Group by folder
+      const grouped: { [key: string]: string[] } = {};
+      for (const note of notes) {
+        const dir = path.dirname(note);
+        const key = dir === '.' ? 'Root' : dir;
+        if (!grouped[key]) {
+          grouped[key] = [];
+        }
+        grouped[key].push(path.basename(note, '.md'));
+      }
+
+      let result = `Found ${notes.length} note(s) in ${folder || 'vault'}:\n\n`;
+      
+      for (const [dir, files] of Object.entries(grouped)) {
+        result += `📁 **${dir}**\n`;
+        for (const file of files.sort()) {
+          result += `  📝 ${file}\n`;
+        }
+        result += '\n';
+      }
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
           },
         ],
       };
