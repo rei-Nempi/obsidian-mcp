@@ -13,7 +13,7 @@ import * as os from 'os';
 import { TemplaterPlugin, TemplaterVariable } from './plugins/templater';
 import { BookSearchPlugin, BookMetadata } from './plugins/book-search';
 import { TasksPlugin, TaskMetadata, TaskFilters } from './plugins/tasks';
-import { KanbanPlugin, KanbanBoard, KanbanCard, CardCreateData } from './plugins/kanban';
+import { KanbanPlugin } from './plugins/kanban';
 import { VaultAnalyticsPlugin } from './plugins/vault-analytics';
 import { AIAnalysisPlugin } from './plugins/ai-analysis';
 import { DailyNotesPlugin } from './plugins/daily-notes';
@@ -1590,6 +1590,53 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       } as any,
     }
   );
+
+  // Additional missing functions
+  tools.push(
+    // Note Analysis Functions (2 functions)
+    {
+      name: 'get_note_statistics',
+      description: 'Get detailed statistics about a note (word count, character count, reading time, etc.)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note file (relative to vault root)',
+          },
+          title: {
+            type: 'string',
+            description: 'Title of the note (alternative to path)',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder containing the note (used with title)',
+          },
+        },
+      } as any,
+    },
+    {
+      name: 'analyze_note_structure',
+      description: 'Analyze note structure including headings, links, content distribution',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note file (relative to vault root)',
+          },
+          title: {
+            type: 'string',
+            description: 'Title of the note (alternative to path)',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder containing the note (used with title)',
+          },
+        },
+      } as any,
+    }
+  );
   
   return { tools };
 });
@@ -2100,7 +2147,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const noteTitle = `${book.title} - ${book.author.join(', ')}`;
       const notePath = path.join(selectedVault, folder, `${noteTitle}.md`);
       
-      let content: string;
+      let content: string = '';
       let useDefaultFormat = true;
       
       if (template && template.toLowerCase() !== 'none' && templaterPlugin) {
@@ -2135,6 +2182,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           created: new Date().toISOString(),
         };
         content = createFrontmatter(metadata) + content;
+      }
+      
+      // Ensure content is defined before use
+      if (!content) {
+        content = bookSearchPlugin.formatAsMarkdown(book);
       }
       
       const fullContent = content;
@@ -3211,7 +3263,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           } catch (error) {
             results.failed++;
-            results.failed_books.push({...bookSpec, error: error.toString()});
+            results.failed_books.push({...bookSpec, error: String(error)});
           }
           
           // Small delay to avoid API rate limiting
@@ -3961,6 +4013,419 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `壊れたリンク検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'get_notes_by_date_range': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボルトが選択されていません。先に "list_vaults" と "select_vault" を実行してください。',
+            },
+          ],
+        };
+      }
+
+      const { start_date, end_date, date_field = 'modified', include_content = false, sort_by = 'date', folder_filter } = args as any;
+
+      if (!start_date || !end_date) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '📅 開始日と終了日を指定してください。\n\n**例:**\n- get_notes_by_date_range(start_date: "2024-01-01", end_date: "2024-01-31")\n- get_notes_by_date_range(start_date: "2024-01-01", end_date: "2024-01-31", date_field: "created")',
+            },
+          ],
+        };
+      }
+
+      try {
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const searchDir = folder_filter ? path.join(selectedVault, folder_filter) : selectedVault;
+        const foundNotes: Array<{
+          title: string;
+          path: string;
+          relativePath: string;
+          dateValue: string;
+          size: number;
+          content?: string;
+        }> = [];
+
+        async function scanForNotes(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                await scanForNotes(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                try {
+                  const stats = await fs.stat(fullPath);
+                  let dateToCheck: Date;
+                  
+                  // Determine which date to check
+                  if (date_field === 'created') {
+                    dateToCheck = stats.birthtime || stats.ctime;
+                  } else if (date_field === 'modified') {
+                    dateToCheck = stats.mtime;
+                  } else if (date_field === 'filename') {
+                    // Try to extract date from filename (YYYY-MM-DD format)
+                    const dateMatch = entry.name.match(/(\d{4}-\d{2}-\d{2})/);
+                    if (dateMatch) {
+                      dateToCheck = new Date(dateMatch[1]);
+                    } else {
+                      continue; // Skip files without date in filename
+                    }
+                  } else {
+                    dateToCheck = stats.mtime;
+                  }
+                  
+                  // Check if date is within range
+                  if (dateToCheck >= startDate && dateToCheck <= endDate) {
+                    const relativePath = path.relative(selectedVault, fullPath);
+                    const title = path.basename(entry.name, '.md');
+                    let content = '';
+                    
+                    if (include_content) {
+                      try {
+                        content = await fs.readFile(fullPath, 'utf-8');
+                      } catch {
+                        content = 'コンテンツの読み取りに失敗しました';
+                      }
+                    }
+                    
+                    foundNotes.push({
+                      title,
+                      path: fullPath,
+                      relativePath,
+                      dateValue: dateToCheck.toISOString().split('T')[0],
+                      size: stats.size,
+                      content: include_content ? content : undefined,
+                    });
+                  }
+                } catch {
+                  // Skip files that can't be processed
+                }
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+
+        await scanForNotes(searchDir);
+
+        // Sort results
+        foundNotes.sort((a, b) => {
+          if (sort_by === 'name') {
+            return a.title.localeCompare(b.title);
+          } else if (sort_by === 'size') {
+            return b.size - a.size;
+          } else {
+            // Sort by date (newest first)
+            return new Date(b.dateValue).getTime() - new Date(a.dateValue).getTime();
+          }
+        });
+
+        let result = `📅 **日付範囲検索結果** (${start_date} ~ ${end_date})\n\n`;
+        result += `🔍 検索条件: ${date_field}日付, ${folder_filter ? `フォルダ: ${folder_filter}` : '全体'}\n`;
+        result += `📊 見つかったノート: ${foundNotes.length}個\n\n`;
+
+        if (foundNotes.length === 0) {
+          result += '指定された日付範囲でノートが見つかりませんでした。\n\n';
+          result += '**ヒント:**\n';
+          result += '- 日付範囲を広げてみてください\n';
+          result += '- date_field パラメータを変更してみてください (created/modified/filename)\n';
+          result += '- folder_filter を削除して全体を検索してみてください';
+        } else {
+          foundNotes.forEach((note, index) => {
+            result += `${index + 1}. **${note.title}**\n`;
+            result += `   📅 ${date_field}: ${note.dateValue}\n`;
+            result += `   📁 ${note.relativePath}\n`;
+            result += `   💾 ${Math.round(note.size / 1024)}KB\n`;
+            if (include_content && note.content) {
+              const preview = note.content.substring(0, 200);
+              result += `   📄 ${preview}${note.content.length > 200 ? '...' : ''}\n`;
+            }
+            result += '\n';
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `日付範囲検索エラー: ${error}`,
+            },
+          ],
+        };
+      }
+    }
+
+    case 'validate_broken_links': {
+      if (!selectedVault) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'ボルトが選択されていません。先に "list_vaults" と "select_vault" を実行してください。',
+            },
+          ],
+        };
+      }
+
+      const { fix_links = false, scan_folder, link_types = ['wiki', 'markdown'], create_report = true } = args as any;
+
+      try {
+        const searchDir = scan_folder ? path.join(selectedVault, scan_folder) : selectedVault;
+        const brokenLinks: Array<{
+          sourceFile: string;
+          sourceRelativePath: string;
+          linkText: string;
+          linkTarget: string;
+          linkType: 'wiki' | 'markdown';
+          lineNumber: number;
+          canAutoFix: boolean;
+          suggestedFix?: string;
+          fixed?: boolean;
+        }> = [];
+
+        // Get all markdown files for reference
+        const allMarkdownFiles: Set<string> = new Set();
+        
+        async function collectMarkdownFiles(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                await collectMarkdownFiles(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                const relativePath = path.relative(selectedVault, fullPath).replace('.md', '');
+                allMarkdownFiles.add(relativePath);
+                allMarkdownFiles.add(path.basename(fullPath, '.md'));
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+
+        await collectMarkdownFiles(selectedVault);
+
+        // Function to check if a link target exists
+        function linkExists(target: string): boolean {
+          const cleanTarget = target.split('#')[0];
+          if (allMarkdownFiles.has(cleanTarget)) return true;
+          
+          try {
+            const fullPath = path.resolve(selectedVault, cleanTarget + '.md');
+            return fsSync.existsSync(fullPath);
+          } catch {
+            return false;
+          }
+        }
+
+        // Function to find similar links for auto-fix suggestions
+        function findSimilarLinks(target: string): string[] {
+          const cleanTarget = target.toLowerCase();
+          const similar: string[] = [];
+          
+          for (const file of allMarkdownFiles) {
+            const fileName = file.toLowerCase();
+            if (fileName.includes(cleanTarget) || cleanTarget.includes(fileName)) {
+              similar.push(file);
+            }
+          }
+          
+          return similar.slice(0, 3); // Return up to 3 suggestions
+        }
+
+        // Scan for broken links
+        async function scanForBrokenLinks(dir: string): Promise<void> {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              
+              if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                await scanForBrokenLinks(fullPath);
+              } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                try {
+                  const content = await fs.readFile(fullPath, 'utf-8');
+                  const lines = content.split('\n');
+                  const relativePath = path.relative(selectedVault, fullPath);
+
+                  lines.forEach((line, lineNumber) => {
+                    // Check wiki links [[...]]
+                    if (link_types.includes('wiki')) {
+                      const wikiLinkRegex = /\[\[([^\]]+)\]\]/g;
+                      let match;
+                      while ((match = wikiLinkRegex.exec(line)) !== null) {
+                        const linkText = match[1];
+                        const linkTarget = linkText.split('|')[0]; // Remove display text
+                        
+                        if (!linkExists(linkTarget)) {
+                          const similar = findSimilarLinks(linkTarget);
+                          brokenLinks.push({
+                            sourceFile: fullPath,
+                            sourceRelativePath: relativePath,
+                            linkText: match[0],
+                            linkTarget,
+                            linkType: 'wiki',
+                            lineNumber: lineNumber + 1,
+                            canAutoFix: similar.length > 0,
+                            suggestedFix: similar.length > 0 ? similar[0] : undefined,
+                          });
+                        }
+                      }
+                    }
+
+                    // Check markdown links [...](...) 
+                    if (link_types.includes('markdown')) {
+                      const markdownLinkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
+                      let match;
+                      while ((match = markdownLinkRegex.exec(line)) !== null) {
+                        const linkTarget = match[2];
+                        
+                        // Skip external links (http/https)
+                        if (linkTarget.startsWith('http')) continue;
+                        
+                        // Clean the target for checking
+                        const cleanTarget = linkTarget.replace('.md', '').split('#')[0];
+                        
+                        if (!linkExists(cleanTarget)) {
+                          const similar = findSimilarLinks(cleanTarget);
+                          brokenLinks.push({
+                            sourceFile: fullPath,
+                            sourceRelativePath: relativePath,
+                            linkText: match[0],
+                            linkTarget: cleanTarget,
+                            linkType: 'markdown',
+                            lineNumber: lineNumber + 1,
+                            canAutoFix: similar.length > 0,
+                            suggestedFix: similar.length > 0 ? similar[0] : undefined,
+                          });
+                        }
+                      }
+                    }
+                  });
+                } catch {
+                  // Skip files that can't be read
+                }
+              }
+            }
+          } catch {
+            // Skip directories that can't be accessed
+          }
+        }
+
+        await scanForBrokenLinks(searchDir);
+
+        // Auto-fix if requested
+        if (fix_links && brokenLinks.length > 0) {
+          const fixableLinks = brokenLinks.filter(link => link.canAutoFix && link.suggestedFix);
+          
+          for (const link of fixableLinks) {
+            try {
+              const content = await fs.readFile(link.sourceFile, 'utf-8');
+              const lines = content.split('\n');
+              
+              if (link.linkType === 'wiki') {
+                const newLinkText = `[[${link.suggestedFix}]]`;
+                lines[link.lineNumber - 1] = lines[link.lineNumber - 1].replace(link.linkText, newLinkText);
+              } else if (link.linkType === 'markdown') {
+                const newLinkText = link.linkText.replace(link.linkTarget, link.suggestedFix);
+                lines[link.lineNumber - 1] = lines[link.lineNumber - 1].replace(link.linkText, newLinkText);
+              }
+              
+              await fs.writeFile(link.sourceFile, lines.join('\n'));
+              link.fixed = true;
+            } catch {
+              // Failed to fix this link
+            }
+          }
+        }
+
+        // Generate report
+        let result = `🔗 **壊れたリンク検証結果**\n\n`;
+        result += `📊 検証範囲: ${scan_folder || '全体'}\n`;
+        result += `🔍 検証タイプ: ${link_types.join(', ')}\n`;
+        result += `🚫 壊れたリンク: ${brokenLinks.length}個\n\n`;
+
+        if (brokenLinks.length === 0) {
+          result += '🎉 壊れたリンクは見つかりませんでした！\n';
+        } else {
+          const wikiLinks = brokenLinks.filter(l => l.linkType === 'wiki').length;
+          const markdownLinks = brokenLinks.filter(l => l.linkType === 'markdown').length;
+          const fixableLinks = brokenLinks.filter(l => l.canAutoFix).length;
+          const fixedLinks = brokenLinks.filter(l => l.fixed).length;
+
+          result += `📋 **概要:**\n`;
+          result += `- Wikiリンク: ${wikiLinks}個\n`;
+          result += `- Markdownリンク: ${markdownLinks}個\n`;
+          result += `- 自動修正可能: ${fixableLinks}個\n`;
+          if (fix_links) {
+            result += `- 修正済み: ${fixedLinks}個\n`;
+          }
+          result += '\n';
+
+          if (create_report) {
+            result += `📝 **詳細レポート:**\n\n`;
+            brokenLinks.forEach((link, index) => {
+              result += `${index + 1}. **${link.sourceRelativePath}** (行${link.lineNumber})\n`;
+              result += `   🔗 ${link.linkText}\n`;
+              result += `   ❌ 対象: ${link.linkTarget}\n`;
+              result += `   📝 タイプ: ${link.linkType}\n`;
+              if (link.suggestedFix) {
+                result += `   💡 修正案: ${link.suggestedFix}\n`;
+              }
+              if (link.fixed) {
+                result += `   ✅ 修正済み\n`;
+              }
+              result += '\n';
+            });
+          }
+
+          if (!fix_links && fixableLinks > 0) {
+            result += `\n💡 **自動修正を実行**: validate_broken_links(fix_links: true)\n`;
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `壊れたリンク検証エラー: ${error}`,
             },
           ],
         };
@@ -7008,7 +7473,7 @@ ${recommendationList}
       try {
         const addedItem = await bookSearchPlugin.addBookToReadingList(book, status, priority, reading_goal);
         
-        const statusEmoji = {
+        const statusEmoji: {[key: string]: string} = {
           'want-to-read': '📚',
           'currently-reading': '📖',
           'read': '✅'
@@ -7381,7 +7846,7 @@ ${resultList}
       try {
         const exportedData = await bookSearchPlugin.exportReadingData(format);
         
-        const formatInfo = {
+        const formatInfo: {[key: string]: {name: string, ext: string, desc: string}} = {
           json: { name: 'JSON', ext: 'json', desc: '構造化データとして保存' },
           csv: { name: 'CSV', ext: 'csv', desc: 'Excel等で開ける表形式' },
           markdown: { name: 'Markdown', ext: 'md', desc: 'Obsidianで読める形式' }
@@ -7784,9 +8249,161 @@ ${format === 'markdown' ? exportedData : `データサイズ: ${exportedData.len
       }
     }
 
+    // Note Analysis Functions
+    case 'get_note_statistics': {
+      if (!selectedVault) {
+        throw new Error('No vault selected');
+      }
+      
+      const { path: notePath, title, folder = '' } = args as any;
+      let targetPath: string;
+      
+      if (notePath) {
+        targetPath = path.join(selectedVault, notePath);
+      } else if (title) {
+        const fileName = title.endsWith('.md') ? title : `${title}.md`;
+        targetPath = path.join(selectedVault, folder, fileName);
+      } else {
+        throw new Error('Please provide either "path" or "title"');
+      }
+      
+      const content = await fs.readFile(targetPath, 'utf-8');
+      const { metadata, body } = parseFrontmatter(content);
+      
+      const words = body.split(/\s+/).filter(word => word.length > 0);
+      const characters = body.length;
+      const charactersNoSpaces = body.replace(/\s/g, '').length;
+      const sentences = body.split(/[.!?]+/).filter(s => s.trim().length > 0);
+      const paragraphs = body.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+      const readingTime = Math.ceil(words.length / 200); // 200 words per minute
+      const headings = (body.match(/^#+\s+.+$/gm) || []).length;
+      const links = (body.match(/\[\[([^\]]+)\]\]/g) || []).length;
+      const tags = (body.match(/#[a-zA-Z0-9_-]+/g) || []).length;
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `# Note Statistics: ${path.basename(targetPath, '.md')}
+
+## Basic Statistics
+- **Word count**: ${words.length}
+- **Character count**: ${characters}
+- **Characters (no spaces)**: ${charactersNoSpaces}
+- **Sentence count**: ${sentences.length}
+- **Paragraph count**: ${paragraphs.length}
+- **Reading time**: ${readingTime} minutes
+
+## Structure
+- **Headings**: ${headings}
+- **Internal links**: ${links}
+- **Tags**: ${tags}
+
+## File Information
+- **Path**: ${path.relative(selectedVault, targetPath)}
+- **Size**: ${(content.length / 1024).toFixed(2)} KB
+${Object.keys(metadata).length > 0 ? `- **Metadata fields**: ${Object.keys(metadata).length}` : ''}`,
+          },
+        ],
+      };
+    }
+
+    case 'analyze_note_structure': {
+      if (!selectedVault) {
+        throw new Error('No vault selected');
+      }
+      
+      const { path: notePath, title, folder = '' } = args as any;
+      let targetPath: string;
+      
+      if (notePath) {
+        targetPath = path.join(selectedVault, notePath);
+      } else if (title) {
+        const fileName = title.endsWith('.md') ? title : `${title}.md`;
+        targetPath = path.join(selectedVault, folder, fileName);
+      } else {
+        throw new Error('Please provide either "path" or "title"');
+      }
+      
+      const content = await fs.readFile(targetPath, 'utf-8');
+      const { body } = parseFrontmatter(content);
+      
+      // Analyze headings hierarchy
+      const headings = [];
+      const headingMatches = body.matchAll(/^(#+)\s+(.+)$/gm);
+      for (const match of headingMatches) {
+        headings.push({
+          level: match[1].length,
+          text: match[2],
+          line: content.substring(0, match.index).split('\n').length
+        });
+      }
+      
+      // Analyze links
+      const internalLinks = [];
+      const linkMatches = body.matchAll(/\[\[([^\]]+)\]\]/g);
+      for (const match of linkMatches) {
+        internalLinks.push(match[1]);
+      }
+      
+      const externalLinks = [];
+      const extLinkMatches = body.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g);
+      for (const match of extLinkMatches) {
+        externalLinks.push({ text: match[1], url: match[2] });
+      }
+      
+      // Content distribution
+      const lines = body.split('\n');
+      const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+      const codeBlocks = (body.match(/```[\s\S]*?```/g) || []).length;
+      const listItems = lines.filter(line => /^\s*[-*+]\s/.test(line)).length;
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `# Note Structure Analysis: ${path.basename(targetPath, '.md')}
+
+## Heading Hierarchy
+${headings.length > 0 ? headings.map(h => `${'  '.repeat(h.level - 1)}- Level ${h.level}: ${h.text} (Line ${h.line})`).join('\n') : 'No headings found'}
+
+## Links Analysis
+- **Internal links**: ${internalLinks.length} (${[...new Set(internalLinks)].length} unique)
+- **External links**: ${externalLinks.length}
+
+${internalLinks.length > 0 ? `### Internal Links:\n${[...new Set(internalLinks)].map(link => `- [[${link}]]`).join('\n')}` : ''}
+
+${externalLinks.length > 0 ? `### External Links:\n${externalLinks.map(link => `- [${link.text}](${link.url})`).join('\n')}` : ''}
+
+## Content Distribution
+- **Total lines**: ${lines.length}
+- **Non-empty lines**: ${nonEmptyLines.length} (${((nonEmptyLines.length / lines.length) * 100).toFixed(1)}%)
+- **Code blocks**: ${codeBlocks}
+- **List items**: ${listItems}
+
+## Structural Health
+- **Heading consistency**: ${headings.length > 0 ? 'Good' : 'No structure'}
+- **Link density**: ${((internalLinks.length + externalLinks.length) / nonEmptyLines.length * 100).toFixed(1)} links per 100 lines`,
+          },
+        ],
+      };
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+});
+
+// Start the server
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('ObsidianMCP Enhanced Server running...');
+}
+
+main().catch((error) => {
+  console.error('Server error:', error);
+  process.exit(1);
 });
 
 export { server };

@@ -13,13 +13,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:full && npm run build:scripts",
+    "build": "npm run build:enhanced && npm run build:scripts",
     "build:simple": "tsc src/index-simple.ts --outDir dist --module commonjs --target es2022 --esModuleInterop",
     "build:enhanced": "tsc src/index-enhanced.ts --outDir dist --module commonjs --target es2022 --esModuleInterop",
-    "build:full": "tsc src/index-full.ts src/plugins/*.ts --outDir dist --module commonjs --target es2022 --esModuleInterop --skipLibCheck",
     "build:scripts": "tsc scripts/configure-claude.ts --outDir dist/scripts --module commonjs --target es2022 --esModuleInterop",
-    "dev": "tsx watch src/index-full.ts",
-    "start": "node dist/index-full.js",
+    "dev": "tsx watch src/index-enhanced.ts",
+    "start": "node dist/index-enhanced.js",
     "clean": "rm -rf dist",
     "test": "jest",
     "test:watch": "jest --watch",

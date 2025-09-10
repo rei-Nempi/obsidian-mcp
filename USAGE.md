@@ -1,7 +1,7 @@
 # ObsidianMCP Usage Guide / 使用方法ガイド
 
-Complete usage instructions for all 59 functions available in ObsidianMCP.  
-ObsidianMCPで利用可能な59の機能の完全使用方法。
+Complete usage instructions for all 65 functions available in ObsidianMCP.  
+ObsidianMCPで利用可能な65の機能の完全使用方法。
 
 **You can use these commands in either English or Japanese - both languages work identically!**  
 **これらのコマンドは英語でも日本語でも使用可能です - どちらの言語でも同じように動作します！**
@@ -9,14 +9,16 @@ ObsidianMCPで利用可能な59の機能の完全使用方法。
 ## Table of Contents / 目次
 
 - [First Time Setup / 初回セットアップ](#first-time-setup--初回セットアップ)
-- [Core Functions / コア機能 (17 functions)](#core-functions--コア機能-17-functions)
+- [Core Functions / コア機能 (20 functions)](#core-functions--コア機能-20-functions)
 - [Vault Analytics / 保管庫分析 (4 functions)](#vault-analytics--保管庫分析-4-functions)
 - [AI Analysis / AI分析 (3 functions)](#ai-analysis--ai分析-3-functions)
 - [Template Management / テンプレート管理 (6 functions)](#template-management--テンプレート管理-6-functions)
 - [Task Notes / タスクノート (6 functions)](#task-notes--タスクノート-6-functions)
-- [Book Search / 書籍検索 (14 functions)](#book-search--書籍検索-14-functions)
+- [Book Search / 書籍検索 (17 functions)](#book-search--書籍検索-17-functions)
+- [Kanban Management / カンバン管理 (7 functions)](#kanban-management--カンバン管理-7-functions)
 - [Daily Notes / デイリーノート (2 functions)](#daily-notes--デイリーノート-2-functions)
 - [Advanced Search / 高度検索 (2 functions)](#advanced-search--高度検索-2-functions)
+- [Note Analysis / ノート分析 (2 functions)](#note-analysis--ノート分析-2-functions)
 - [User Confirmation System / ユーザー確認システム](#user-confirmation-system--ユーザー確認システム)
 
 ## First Time Setup / 初回セットアップ
@@ -50,7 +52,7 @@ Select a specific vault to work with.
 "執筆統計を取得してください"
 ```
 
-## Core Functions / コア機能 (17 functions)
+## Core Functions / コア機能 (20 functions)
 
 ### Note Management / ノート管理
 
@@ -149,6 +151,29 @@ Select a specific vault to work with.
 "List all tags in my vault"
 "Show me all notes tagged with #meeting"
 "Find notes with tags #project and #urgent"
+"保管庫内の全タグを一覧表示して"
+"#会議 タグの付いたノートを全て表示して"
+"#プロジェクト と #緊急 タグのノートを見つけて"
+```
+
+#### Folder Management / フォルダ管理
+```
+"Create a new folder called 'Projects' in my vault"
+"Create nested folders for organizing my research notes"
+"Make a folder structure for the new project"
+"保管庫に「プロジェクト」というフォルダを作成して"
+"研究ノートを整理するためのネストしたフォルダを作成して"
+"新プロジェクト用のフォルダ構造を作って"
+```
+
+#### Note Analysis / ノート分析
+```
+"Show me all backlinks to my 'Project Overview' note"
+"Get detailed information about the 'Meeting Notes' file"
+"Find all notes that link to this project document"
+"「プロジェクト概要」ノートへのバックリンクを全て表示して"
+"「会議ノート」ファイルの詳細情報を取得して"
+"このプロジェクトドキュメントにリンクしているノートを見つけて"
 ```
 
 ## Vault Analytics / 保管庫分析 (4 functions)
@@ -235,19 +260,69 @@ Select a specific vault to work with.
 "Find tasks created in the last 7 days"
 ```
 
-## Book Search / 書籍検索 (14 functions)
+## Book Search / 書籍検索 (17 functions)
 
 ### Search and Note Creation / 検索・ノート作成
 ```
 "Search for books about 'machine learning algorithms'"
 "Find books by author 'Malcolm Gladwell'"
+"Search for books by ISBN 9781234567890"
+"Search books in the 'Science Fiction' category"
 "Create a reading note for option 2 from the search results"
 "Create a reading list for data science books"
 "「機械学習アルゴリズム」について書籍を検索して"
 "マルコム・グラッドウェルの著作を検索して"
+"ISBN 9781234567890で書籍を検索して"
+"「サイエンスフィクション」カテゴリの書籍を検索して"
 "検索結果の2番目の選択肢で読書ノートを作成して"
 "データサイエンス本の読書リストを作成して"
 ```
+
+### Advanced Book Management / 高度な書籍管理
+```
+"Compare different editions of '1984' by George Orwell"
+"Get book series information for 'Harry Potter'"
+"Track my reading progress for the current book"
+"Create a custom book review template with rating fields"
+"Bulk import books from my reading list"
+"ジョージ・オーウェルの『1984』の異なる版を比較して"
+"「ハリー・ポッター」シリーズの情報を取得して"
+"現在読んでいる本の読書進捗を追跡して"
+"評価フィールド付きのカスタム書籍レビューテンプレートを作成して"
+"読書リストから書籍を一括インポートして"
+```
+
+## Kanban Management / カンバン管理 (7 functions)
+
+### Board Management / ボード管理
+```
+"Create a new Kanban board for project management"
+"List all my Kanban boards"
+"Show me the 'Website Project' Kanban board"
+"プロジェクト管理用の新しいカンバンボードを作成して"
+"私のカンバンボードを全て一覧表示して"
+"「ウェブサイトプロジェクト」カンバンボードを表示して"
+```
+
+### Card Management / カード管理
+```
+"Add a new card 'Design wireframes' to the Todo column of my project board"
+"Move the 'Code review' card from In Progress to Done"
+"Update the card 'Bug fixes' with new description and priority"
+"Delete the completed card from the project board"
+"Archive old cards to clean up the board"
+"プロジェクトボードのTodoカラムに「ワイヤーフレーム設計」カードを追加して"
+"「コードレビュー」カードを進行中から完了に移動して"
+"「バグ修正」カードの説明と優先度を更新して"
+"プロジェクトボードから完了したカードを削除して"
+"ボードをクリーンアップするために古いカードをアーカイブして"
+```
+
+**Kanban Features / カンバン機能:**
+- **Visual project tracking / ビジュアルプロジェクト追跡**
+- **Flexible card management / 柔軟なカード管理**
+- **Column-based organization / カラムベース組織化**
+- **Card prioritization and labeling / カード優先度付けとラベル化**
 
 ## Daily Notes / デイリーノート (2 functions)
 
@@ -288,6 +363,28 @@ Select a specific vault to work with.
 "Find and show me all broken links in my vault"
 "Check for broken links in the Projects folder only"
 "Find broken links and automatically fix obvious ones"
+```
+
+## Note Analysis / ノート分析 (2 functions)
+
+### Note Statistics / ノート統計
+```
+"Get statistics for my 'Project Overview' note including word count and reading time"
+"Show me detailed metrics for this research paper"
+"Analyze word count, character count and estimated reading time for this document"
+"「プロジェクト概要」ノートの単語数と読書時間を含む統計を取得して"
+"この研究論文の詳細なメトリクスを表示して"
+"このドキュメントの単語数、文字数、推定読書時間を分析して"
+```
+
+### Note Structure Analysis / ノート構造分析
+```
+"Analyze the structure and organization of my 'Meeting Notes' file"
+"Show heading hierarchy and content distribution for this document"
+"Get detailed structure analysis including links, tags, and sections"
+"「会議ノート」ファイルの構造と組織を分析して"
+"このドキュメントの見出し階層とコンテンツ分布を表示して"
+"リンク、タグ、セクションを含む詳細な構造分析を取得して"
 ```
 
 ## Advanced Usage Tips / 高度な使用方法のヒント

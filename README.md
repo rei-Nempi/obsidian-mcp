@@ -9,9 +9,9 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 
 ## Features / 機能
 
-**🎯 Complete Feature Set: 59 Functions / 完全機能セット：59の機能**
+**🎯 Complete Feature Set: 65 Functions / 完全機能セット：65の機能**
 
-### 🏗️ Core Features / コア機能 (17 functions)
+### 🏗️ Core Features / コア機能 (20 functions)
 
 - 🔍 **Automatic Vault Discovery** - Automatically finds all Obsidian vaults on your system
 - 📝 **Smart Note Management** - Create, read, update, delete, move notes with automatic title extraction and frontmatter support
@@ -83,7 +83,7 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 
 ---
 
-### 🏗️ コア機能 (17機能)
+### 🏗️ コア機能 (20機能)
 
 - 🔍 **保管庫自動探索** - システム内のすべてのObsidian保管庫を自動検出
 - 📝 **スマートノート管理** - 自動タイトル抽出・フロントマター対応でノートの作成・読取・更新・削除・移動
@@ -95,13 +95,20 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 - 📁 **フォルダ操作** - パス検証・リンク自動更新付きフォルダの作成・移動・削除
 - 🔗 **バックリンク分析** - 特定のノートにリンクしているノートを発見
 
-### 📚 書籍検索プラグイン (14機能)
+### 📚 書籍検索プラグイン (17機能)
 
 - 📖 **高度書籍検索** - ISBN、タイトル、著者で複数API横断検索
 - 📝 **自動書籍ノート** - メタデータ、レビュー、進捗追跡付き読書ノート作成
 - 📊 **読書リスト** - 進捗追跡付き読書リスト管理
 - 🔗 **書籍関連付け** - 既存ノートとの関連付けと書籍ネットワーク作成
 - 📤 **エクスポート** - 複数形式での書籍データエクスポート
+
+### 📋 Kanbanボード管理 (7機能)
+
+- 🏗️ **ボード管理** - Kanbanボードの作成・一覧表示・削除
+- 🃏 **カード操作** - カード作成・更新・移動・削除とステータス管理
+- 📊 **ボード分析** - ボード構造・進捗状況の詳細分析
+- 🔄 **プロジェクト管理** - カードベースタスクフロー・ワークフロー管理
 
 ### 🎯 テンプレートプラグイン (6機能)
 
@@ -139,6 +146,11 @@ MCP（Model Context Protocol）サーバーを使用して、Claude DesktopとOb
 
 - 📅 **日付範囲検索** - 柔軟フィルタリング付き作成・更新日別ノート検索
 - 🔗 **壊れたリンク検証** - スマート提案付き壊れたリンク検出・自動修復
+
+### 🔍 ノート分析 (2機能)
+
+- 📊 **ノート統計分析** - 文字数・語数・読み取り時間など詳細統計情報
+- 🧠 **ノート構造分析** - 見出し階層・リンク構造・コンテンツ分布分析
 
 ## Installation / インストール方法
 
@@ -285,8 +297,8 @@ Once configured, you can use natural language commands in Claude:
 
 ## Available Commands / 利用可能なコマンド
 
-**📋 Complete Command Reference: [USAGE.md](USAGE.md) contains detailed examples for all 59 functions**  
-**📋 完全コマンドリファレンス：[USAGE.md](USAGE.md)に全59機能の詳細例があります**
+**📋 Complete Command Reference: [USAGE.md](USAGE.md) contains detailed examples for all 65 functions**  
+**📋 完全コマンドリファレンス：[USAGE.md](USAGE.md)に全65機能の詳細例があります**
 
 ### Core Commands / コアコマンド (17 functions)
 
