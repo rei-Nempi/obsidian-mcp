@@ -47,6 +47,449 @@ let dailyNotesPlugin: DailyNotesPlugin | null = null;
 // Store last book search results for easy selection
 let lastBookSearchResults: BookMetadata[] = [];
 
+// Workflow control state
+interface WorkflowState {
+  vaultSelected: boolean;
+  currentOperation: string | null;
+  interactiveMode: boolean;
+}
+
+let workflowState: WorkflowState = {
+  vaultSelected: false,
+  currentOperation: null,
+  interactiveMode: true
+};
+
+// Standardized error structure
+interface MCPError {
+  error: boolean;
+  error_code: string;
+  message: string;
+  required_action: string;
+  help_url?: string;
+}
+
+// Error code definitions
+const ERROR_CODES = {
+  VAULT_NOT_SELECTED: 'VAULT_NOT_SELECTED',
+  FOLDER_NOT_SPECIFIED: 'FOLDER_NOT_SPECIFIED',
+  TEMPLATE_NOT_CONFIRMED: 'TEMPLATE_NOT_CONFIRMED',
+  INVALID_PATH: 'INVALID_PATH'
+} as const;
+
+// Create standardized error response
+function createErrorResponse(errorCode: keyof typeof ERROR_CODES, customMessage?: string): any {
+  const errorMap: Record<keyof typeof ERROR_CODES, MCPError> = {
+    VAULT_NOT_SELECTED: {
+      error: true,
+      error_code: 'VAULT_NOT_SELECTED',
+      message: customMessage || '操作を実行できません：保管庫が選択されていません',
+      required_action: 'list_vaults()を実行してから、select_vault()で保管庫を選択してください',
+      help_url: 'https://docs.obsidian.md/'
+    },
+    FOLDER_NOT_SPECIFIED: {
+      error: true,
+      error_code: 'FOLDER_NOT_SPECIFIED',
+      message: customMessage || '保存先フォルダが指定されていません',
+      required_action: 'フォルダパラメータを指定してください',
+    },
+    TEMPLATE_NOT_CONFIRMED: {
+      error: true,
+      error_code: 'TEMPLATE_NOT_CONFIRMED',
+      message: customMessage || 'テンプレートが選択されていません',
+      required_action: 'テンプレートを選択して確認してください',
+    },
+    INVALID_PATH: {
+      error: true,
+      error_code: 'INVALID_PATH',
+      message: customMessage || '無効なパスが指定されました',
+      required_action: '正しいパス形式を指定してください',
+    }
+  };
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(errorMap[errorCode], null, 2)
+      }
+    ]
+  };
+}
+
+// Check if vault is selected - required for all vault operations
+function requireVaultSelection(): boolean {
+  return selectedVault !== null && workflowState.vaultSelected;
+}
+
+// Interactive vault selection prompt
+function createVaultSelectionPrompt(vaults: string[]): string {
+  let prompt = '=== Obsidian保管庫の選択 ===\n';
+  prompt += '以下の保管庫が見つかりました：\n\n';
+  
+  vaults.forEach((vault, index) => {
+    prompt += `${index + 1}. ${path.basename(vault)} (パス: ${vault})\n`;
+  });
+  
+  prompt += '\n使用する保管庫の番号を選択してください。';
+  prompt += '\n例: select_vault(vault_path: "/path/to/vault")';
+  
+  return prompt;
+}
+
+// Interactive folder specification prompt
+function createFolderSelectionPrompt(): string {
+  let prompt = '=== 保存先フォルダの指定 ===\n';
+  prompt += 'ファイルを保存するフォルダを指定してください。\n';
+  prompt += '例:\n';
+  prompt += '  - Templates/     (テンプレート用)\n';
+  prompt += '  - Meeting/       (議事録用)\n';
+  prompt += '  - Daily/         (デイリーノート用)\n';
+  prompt += '  - /             (ルートフォルダ)\n\n';
+  prompt += '保存先フォルダ: folder パラメータで指定してください';
+  
+  return prompt;
+}
+
+// Template selection options
+interface TemplateOption {
+  id: number;
+  name: string;
+  description: string;
+  usage: string;
+  content: string;
+}
+
+// Generate template suggestions
+function generateTemplateOptions(templateType: string): TemplateOption[] {
+  const options: TemplateOption[] = [];
+  
+  switch (templateType.toLowerCase()) {
+    case 'daily':
+    case 'デイリー':
+      options.push({
+        id: 1,
+        name: 'シンプル版',
+        description: '基本的な構成',
+        usage: '簡単な記録',
+        content: `# {{date:YYYY-MM-DD}}
+
+## 今日のタスク
+- [ ] 
+
+## 振り返り
+- 
+
+## メモ
+- `
+      });
+      
+      options.push({
+        id: 2,
+        name: '標準版',
+        description: 'バランスの取れた構成',
+        usage: '一般的な用途',
+        content: `# {{date:YYYY-MM-DD}} - デイリーノート
+
+## 📅 今日の予定
+- [ ] 
+
+## ✅ 完了したタスク
+- 
+
+## 📝 学んだこと
+- 
+
+## 💭 今日の振り返り
+- 
+
+## 🔗 関連リンク
+- `
+      });
+      
+      options.push({
+        id: 3,
+        name: '詳細版',
+        description: '包括的な構成',
+        usage: '詳細な記録',
+        content: `# {{date:YYYY-MM-DD}} - デイリーノート
+
+## 🎯 今日の目標
+- 
+
+## 📅 スケジュール
+### 午前
+- [ ] 
+
+### 午後
+- [ ] 
+
+### 夕方
+- [ ] 
+
+## ✅ 完了したタスク
+- 
+
+## 📚 学習記録
+### 新しく学んだこと
+- 
+
+### 復習したこと
+- 
+
+## 💭 今日の振り返り
+### よかったこと
+- 
+
+### 改善したいこと
+- 
+
+### 明日に向けて
+- 
+
+## 🔗 関連ノート
+- 
+
+## 📊 今日の評価
+満足度: /10
+生産性: /10`
+      });
+      break;
+      
+    case 'meeting':
+    case 'ミーティング':
+      options.push({
+        id: 1,
+        name: 'シンプル版',
+        description: '基本的な議事録',
+        usage: '簡単な会議記録',
+        content: `# {{title}} - {{date:YYYY-MM-DD}}
+
+## 参加者
+- 
+
+## 議題
+- 
+
+## 議論内容
+- 
+
+## 決定事項
+- 
+
+## アクションアイテム
+- [ ] `
+      });
+      
+      options.push({
+        id: 2,
+        name: '標準版',
+        description: '構造化された議事録',
+        usage: 'ビジネス会議',
+        content: `# {{title}} - {{date:YYYY-MM-DD}}
+
+## 📋 会議情報
+- **日時**: {{date:YYYY-MM-DD HH:mm}}
+- **場所**: 
+- **司会**: 
+- **書記**: 
+
+## 👥 参加者
+- 
+
+## 📝 議題
+1. 
+
+## 💬 議論内容
+### 議題1: 
+- 
+
+## ✅ 決定事項
+1. 
+
+## 📋 アクションアイテム
+- [ ] **担当者**: **期限**: 
+
+## 📎 関連資料
+- 
+
+## 🔄 次回会議
+- **日時**: 
+- **議題**: `
+      });
+      
+      options.push({
+        id: 3,
+        name: '詳細版',
+        description: 'プロジェクト管理対応',
+        usage: '重要な会議や意思決定',
+        content: `# {{title}} - {{date:YYYY-MM-DD}}
+
+## 📋 会議情報
+- **日時**: {{date:YYYY-MM-DD HH:mm}}
+- **場所**: 
+- **会議種別**: 
+- **司会**: 
+- **書記**: 
+- **所要時間**: 
+
+## 👥 参加者
+### 必須参加者
+- 
+
+### 任意参加者
+- 
+
+### 欠席者
+- 
+
+## 🎯 会議の目的
+- 
+
+## 📝 議題
+1. 
+   - **提案者**: 
+   - **時間**: 分
+
+## 💬 議論内容
+### 議題1: 
+#### 提起された問題・課題
+- 
+
+#### 議論のポイント
+- 
+
+#### 異なる意見・懸念事項
+- 
+
+## ✅ 決定事項
+1. 
+   - **理由**: 
+   - **影響範囲**: 
+   - **実施時期**: 
+
+## 📋 アクションアイテム
+| タスク | 担当者 | 期限 | 優先度 | 状況 |
+|--------|--------|------|--------|------|
+|        |        |      |        |      |
+
+## ⚠️ リスク・懸念事項
+- 
+
+## 📊 進捗状況
+- 
+
+## 📎 関連資料・参考リンク
+- 
+
+## 🔄 次回会議
+- **日時**: 
+- **議題**: 
+- **準備事項**: 
+
+## 📝 その他メモ
+- `
+      });
+      break;
+      
+    default:
+      options.push({
+        id: 1,
+        name: 'シンプル版',
+        description: '基本的な構成',
+        usage: '簡単な記録',
+        content: `# {{title}}
+
+## 概要
+- 
+
+## 詳細
+- 
+
+## メモ
+- `
+      });
+      
+      options.push({
+        id: 2,
+        name: '標準版',
+        description: 'バランスの取れた構成',
+        usage: '一般的な用途',
+        content: `# {{title}}
+
+## 📝 概要
+- 
+
+## 🎯 目的
+- 
+
+## 📋 詳細
+- 
+
+## 🔗 関連リンク
+- 
+
+## 📝 メモ
+- `
+      });
+      
+      options.push({
+        id: 3,
+        name: '詳細版',
+        description: '包括的な構成',
+        usage: '詳細な記録',
+        content: `# {{title}}
+
+## 📝 概要
+- 
+
+## 🎯 目的・背景
+- 
+
+## 📊 現状分析
+- 
+
+## 📋 詳細内容
+### ポイント1
+- 
+
+### ポイント2
+- 
+
+## ✅ アクションアイテム
+- [ ] 
+
+## 🔗 関連リンク・参考資料
+- 
+
+## 📈 今後の展開
+- 
+
+## 📝 追加メモ
+- `
+      });
+  }
+  
+  return options;
+}
+
+// Create template selection prompt
+function createTemplateSelectionPrompt(options: TemplateOption[]): string {
+  let prompt = '=== テンプレートの選択 ===\n';
+  prompt += '以下のテンプレート案から選択してください：\n\n';
+  
+  options.forEach(option => {
+    prompt += `[Option ${option.id}] ${option.name}\n`;
+    prompt += `- 特徴: ${option.description}\n`;
+    prompt += `- 用途: ${option.usage}\n\n`;
+  });
+  
+  prompt += 'テンプレートを確認して作成するには：\n';
+  prompt += 'create_custom_template(name: "テンプレート名", template_option: 1-3)';
+  
+  return prompt;
+}
+
 // File locks for concurrent editing detection (reserved for future use)
 // const fileLocks: Map<string, { timestamp: number; sessionId: string }> = new Map();
 // const sessionId = crypto.randomBytes(16).toString('hex');
@@ -944,6 +1387,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         } as any,
       },
       {
+        name: 'create_custom_template',
+        description: 'Create a custom template with interactive selection and folder specification',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name of the template to create',
+            },
+            template_type: {
+              type: 'string',
+              description: 'Type of template (daily, meeting, note, etc.)',
+              default: 'note',
+            },
+            template_option: {
+              type: 'number',
+              description: 'Selected template option (1-3)',
+            },
+            folder: {
+              type: 'string',
+              description: 'Folder to save the template in (e.g., Templates/)',
+            },
+            confirm: {
+              type: 'boolean',
+              description: 'Confirm template creation (required for actual creation)',
+              default: false,
+            },
+          },
+          required: ['name'],
+        } as any,
+      },
+      {
         name: 'process_template',
         description: 'Process a template string with Templater syntax',
         inputSchema: {
@@ -1654,18 +2129,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: 'No Obsidian vaults found. Please create a vault first.',
+              text: 'Obsidian保管庫が見つかりませんでした。最初に保管庫を作成してください。',
             },
           ],
         };
       }
       
-      const vaultList = discoveredVaults.map((v, i) => `${i + 1}. ${v}`).join('\n');
+      const prompt = createVaultSelectionPrompt(discoveredVaults);
       return {
         content: [
           {
             type: 'text',
-            text: `Found ${discoveredVaults.length} Obsidian vault(s):\n\n${vaultList}\n\nUse 'select_vault' with the vault path to select one.`,
+            text: prompt,
           },
         ],
       };
@@ -1682,25 +2157,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         
         selectedVault = vault_path;
+        workflowState.vaultSelected = true;
         await initializePlugins();
         
         return {
           content: [
             {
               type: 'text',
-              text: `Vault selected: ${vault_path}\n\nVault name: ${path.basename(vault_path)}`,
+              text: `✅ 保管庫が選択されました\n\n**保管庫パス:** ${vault_path}\n**保管庫名:** ${path.basename(vault_path)}\n\n**次のステップ:**\n- ノートを作成: create_note()\n- テンプレートを作成: create_custom_template()\n- 既存ノートを検索: search_notes()\n- 書籍検索: search_books()`,
             },
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: Could not access vault at ${vault_path}`,
-            },
-          ],
-        };
+        return createErrorResponse('INVALID_PATH', `指定されたパスの保管庫にアクセスできません: ${vault_path}`);
       }
     }
 
@@ -1749,18 +2218,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'create_from_template': {
-      if (!selectedVault || !templaterPlugin) {
+      // REQ-001: Vault selection requirement
+      if (!workflowState.vaultSelected || !selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected or Templater not available.',
+              text: JSON.stringify({
+                error: true,
+                error_code: "VAULT_NOT_SELECTED",
+                message: "操作を実行できません：保管庫が選択されていません",
+                required_action: "list_vaults()を実行してから、select_vault()で保管庫を選択してください",
+                help_url: "https://docs.example.com/obsidian-mcp/vault-selection"
+              }, null, 2)
+            },
+          ],
+        };
+      }
+
+      if (!templaterPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Templaterプラグインが利用できません。',
             },
           ],
         };
       }
       
-      const { template_name, title: inputTitle, folder = '', variables = [], confirm = false } = args as any;
+      const { template_name, title: inputTitle, folder, variables = [], confirm = false } = args as any;
+
+      // REQ-002: Folder specification requirement
+      if (folder === undefined && !confirm) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `=== 保存先フォルダの指定 ===\nテンプレートから作成するファイルを保存するフォルダを指定してください。\n\n例:\n  - Templates/     (テンプレート用)\n  - Meeting/       (議事録用)\n  - Daily/         (デイリーノート用)\n  - Notes/         (一般ノート用)\n  - ""             (ルートフォルダ)\n\n使用方法：create_from_template(template_name: "${template_name}", title: "${inputTitle || 'ノートタイトル'}", folder: "フォルダパス", confirm: true)`
+            },
+          ],
+        };
+      }
+
+      const finalFolder = folder || '';
       
       // Handle missing title - ask for title or generate default
       let finalTitle = inputTitle;
@@ -1770,14 +2271,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       // User confirmation required for note creation from template
       if (!confirm) {
-        const targetPath = path.join(folder, `${finalTitle}.md`);
-        const fullTargetPath = path.join(selectedVault, folder, `${finalTitle}.md`);
+        const targetPath = path.join(finalFolder, `${finalTitle}.md`);
+        const fullTargetPath = path.join(selectedVault, finalFolder, `${finalTitle}.md`);
         
         // Check if folder exists
         let folderStatus = '';
         try {
-          const folderPath = path.join(selectedVault, folder);
-          if (folder) {
+          const folderPath = path.join(selectedVault, finalFolder);
+          if (finalFolder) {
             await fs.access(folderPath);
             folderStatus = '✅ 既存フォルダ';
           } else {
@@ -1869,6 +2370,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         ],
       };
+    }
+
+    case 'create_custom_template': {
+      // REQ-001: Check vault selection
+      if (!workflowState.vaultSelected || !selectedVault) {
+        return createErrorResponse('VAULT_NOT_SELECTED');
+      }
+      
+      const { name, template_type = 'note', template_option, folder, confirm = false } = args as any;
+      
+      // REQ-002: Check folder specification
+      if (!folder && workflowState.interactiveMode) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: createFolderSelectionPrompt(),
+            },
+          ],
+        };
+      }
+      
+      // REQ-003: Interactive template selection
+      if (!template_option && !confirm) {
+        const templateOptions = generateTemplateOptions(template_type);
+        const selectionPrompt = createTemplateSelectionPrompt(templateOptions);
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: selectionPrompt,
+            },
+          ],
+        };
+      }
+      
+      // Validate template option
+      if (template_option && (template_option < 1 || template_option > 3)) {
+        return createErrorResponse('TEMPLATE_NOT_CONFIRMED', 'テンプレートオプションは1-3の範囲で指定してください');
+      }
+      
+      // Show confirmation before creating
+      if (!confirm) {
+        const templateOptions = generateTemplateOptions(template_type);
+        const selectedOption = templateOptions[template_option - 1];
+        
+        const confirmationText = `📝 **テンプレート作成の確認**
+
+**作成するテンプレート:**
+- **名前**: ${name}
+- **タイプ**: ${template_type}
+- **オプション**: ${selectedOption.name} (${selectedOption.description})
+- **保存先**: ${folder || 'Templates/'}
+
+**プレビュー:**
+\`\`\`
+${selectedOption.content.substring(0, 200)}${selectedOption.content.length > 200 ? '...' : ''}
+\`\`\`
+
+本当にこのテンプレートを作成しますか？
+
+✅ **作成する**: create_custom_template(name: "${name}", template_type: "${template_type}", template_option: ${template_option}, folder: "${folder}", confirm: true)
+❌ **キャンセル**: 操作をキャンセルします`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: confirmationText,
+            },
+          ],
+        };
+      }
+      
+      // Create the template
+      try {
+        const templateOptions = generateTemplateOptions(template_type);
+        const selectedOption = templateOptions[template_option - 1];
+        
+        const templateDir = path.join(selectedVault, folder || 'Templates');
+        const templatePath = path.join(templateDir, `${name}.md`);
+        
+        // Ensure directory exists
+        await fs.mkdir(templateDir, { recursive: true });
+        
+        // Write template file
+        await fs.writeFile(templatePath, selectedOption.content, 'utf-8');
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ **テンプレート作成完了**
+
+**作成されたテンプレート:**
+- **名前**: ${name}
+- **タイプ**: ${template_type} - ${selectedOption.name}
+- **パス**: ${path.relative(selectedVault, templatePath)}
+
+**次のステップ:**
+- テンプレートを使用してノート作成: create_from_template(template_name: "${name}")
+- テンプレート一覧確認: list_templates()`,
+            },
+          ],
+        };
+      } catch (error) {
+        return createErrorResponse('INVALID_PATH', `テンプレート作成に失敗しました: ${error}`);
+      }
     }
 
     case 'search_book_by_isbn': {
@@ -3368,18 +3978,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'create_daily_note': {
-      if (!selectedVault || !dailyNotesPlugin) {
+      // REQ-001: Vault selection requirement
+      if (!workflowState.vaultSelected || !selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected or Daily Notes plugin not available.',
+              text: JSON.stringify({
+                error: true,
+                error_code: "VAULT_NOT_SELECTED",
+                message: "操作を実行できません：保管庫が選択されていません",
+                required_action: "list_vaults()を実行してから、select_vault()で保管庫を選択してください",
+                help_url: "https://docs.example.com/obsidian-mcp/vault-selection"
+              }, null, 2)
+            },
+          ],
+        };
+      }
+
+      if (!dailyNotesPlugin) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Daily Notesプラグインが利用できません。',
             },
           ],
         };
       }
       
       const { date, template, folder, template_variables = {}, confirm = false } = args as any;
+
+      // REQ-002: Folder specification requirement
+      if (folder === undefined && !confirm) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `=== 保存先フォルダの指定 ===\nデイリーノートを保存するフォルダを指定してください。\n\n例:\n  - Daily/         (デイリーノート用)\n  - Journal/       (日記用)\n  - Notes/         (一般ノート用)\n  - ""             (ルートフォルダ)\n\n使用方法：create_daily_note(date: "${date || 'today'}", folder: "フォルダパス", confirm: true)`
+            },
+          ],
+        };
+      }
+
+      const finalFolder = folder || '';
       
       try {
         // Parse and validate date if provided
@@ -4433,18 +5075,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'create_note': {
-      if (!selectedVault) {
+      // REQ-001: Vault selection requirement
+      if (!workflowState.vaultSelected || !selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please use "list_vaults" and then "select_vault" first.',
+              text: JSON.stringify({
+                error: true,
+                error_code: "VAULT_NOT_SELECTED",
+                message: "操作を実行できません：保管庫が選択されていません",
+                required_action: "list_vaults()を実行してから、select_vault()で保管庫を選択してください",
+                help_url: "https://docs.example.com/obsidian-mcp/vault-selection"
+              }, null, 2)
             },
           ],
         };
       }
       
-      const { title: inputTitle, content, folder = '', metadata, force_create = false, confirm = false } = args as any;
+      const { title: inputTitle, content, folder, metadata, force_create = false, confirm = false } = args as any;
+
+      // REQ-002: Folder specification requirement
+      if (folder === undefined && !confirm) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `=== 保存先フォルダの指定 ===\nファイルを保存するフォルダを指定してください。\n\n例:\n  - Templates/     (テンプレート用)\n  - Meeting/       (議事録用)\n  - Daily/         (デイリーノート用)\n  - Notes/         (一般ノート用)\n  - ""             (ルートフォルダ)\n\n使用方法：create_note(title: "${inputTitle || 'ノートタイトル'}", content: "...", folder: "フォルダパス", confirm: true)`
+            },
+          ],
+        };
+      }
+
+      const finalFolder = folder || '';
       
       // Handle missing title - ask for title or extract from content
       let finalTitle = inputTitle;
@@ -4472,14 +5135,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       // User confirmation required for note creation
       if (!confirm) {
-        const targetPath = path.join(folder, `${finalTitle}.md`);
-        const fullTargetPath = path.join(selectedVault, folder, `${finalTitle}.md`);
+        const targetPath = path.join(finalFolder, `${finalTitle}.md`);
+        const fullTargetPath = path.join(selectedVault, finalFolder, `${finalTitle}.md`);
         
         // Check if folder exists
         let folderStatus = '';
         try {
-          const folderPath = path.join(selectedVault, folder);
-          if (folder) {
+          const folderPath = path.join(selectedVault, finalFolder);
+          if (finalFolder) {
             await fs.access(folderPath);
             folderStatus = '✅ 既存フォルダ';
           } else {
@@ -5284,27 +5947,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'move_note': {
-      if (!selectedVault) {
+      // REQ-001: Vault selection requirement
+      if (!workflowState.vaultSelected || !selectedVault) {
         return {
           content: [
             {
               type: 'text',
-              text: 'No vault selected. Please select a vault first using select_vault.',
+              text: JSON.stringify({
+                error: true,
+                error_code: "VAULT_NOT_SELECTED",
+                message: "操作を実行できません：保管庫が選択されていません",
+                required_action: "list_vaults()を実行してから、select_vault()で保管庫を選択してください",
+                help_url: "https://docs.example.com/obsidian-mcp/vault-selection"
+              }, null, 2)
             },
           ],
         };
       }
 
-      const sourcePath = args?.source_path as string;
-      const destinationPath = args?.destination_path as string;
-      const force = args?.force as boolean || false;
+      const { source_path: sourcePath, destination_path: destinationPath, force = false, confirm = false } = args as any;
 
       if (!sourcePath || !destinationPath) {
         return {
           content: [
             {
               type: 'text',
-              text: 'Error: Both source_path and destination_path are required.',
+              text: `📄 ノート移動機能\n\n**必要なパラメータ:**\n- source_path: 移動元のファイルパス\n- destination_path: 移動先のファイルパス\n\n**使用例:**\nmove_note(source_path: "ノート.md", destination_path: "Archive/ノート.md")\n\n**オプション:**\n- force: true で上書き確認をスキップ\n- confirm: true で実際の移動を実行`,
+            },
+          ],
+        };
+      }
+
+      // 確認プロセス
+      if (!confirm) {
+        const sourceFullPath = path.resolve(selectedVault, sourcePath);
+        const destFullPath = path.resolve(selectedVault, destinationPath);
+
+        // ファイル存在確認
+        let sourceStatus = '';
+        let destStatus = '';
+        
+        try {
+          if (fsSync.existsSync(sourceFullPath)) {
+            sourceStatus = '✅ 存在';
+          } else {
+            sourceStatus = '❌ 存在しません';
+          }
+        } catch {
+          sourceStatus = '❌ アクセスできません';
+        }
+
+        try {
+          if (fsSync.existsSync(destFullPath)) {
+            destStatus = '⚠️ 既存ファイルを上書きします';
+          } else {
+            destStatus = '🆕 新規ファイル';
+          }
+        } catch {
+          destStatus = '🆕 新規ファイル';
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `📄 ノート移動の確認\n\n**移動元:**\n- パス: ${sourcePath}\n- 状態: ${sourceStatus}\n\n**移動先:**\n- パス: ${destinationPath}\n- 状態: ${destStatus}\n\n${sourceStatus.includes('❌') ? '⚠️ 移動元ファイルが存在しません\n' : ''}${destStatus.includes('上書き') ? '⚠️ 移動先に同名ファイルが存在します\n' : ''}\n✅ **実行する**: move_note(source_path: "${sourcePath}", destination_path: "${destinationPath}", confirm: true)\n❌ **キャンセル**: 操作をキャンセルします`,
             },
           ],
         };
