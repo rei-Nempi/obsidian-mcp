@@ -33,6 +33,7 @@ export interface ReadingListItem {
 export class BookSearchPlugin {
   private googleApiKey?: string;
   private openLibraryEnabled: boolean;
+  private openBDEnabled: boolean; // openBD API for Japanese books
   private vaultPath: string;
   private readingListPath: string;
 
@@ -40,6 +41,7 @@ export class BookSearchPlugin {
     this.vaultPath = vaultPath;
     this.googleApiKey = googleApiKey;
     this.openLibraryEnabled = true;
+    this.openBDEnabled = true; // Enable Japanese book database by default
     this.readingListPath = path.join(vaultPath, 'Books', 'reading-list.json');
   }
 
@@ -47,9 +49,15 @@ export class BookSearchPlugin {
     // Clean ISBN (remove dashes and spaces)
     const cleanISBN = isbn.replace(/[-\s]/g, '');
     
-    // Try Google Books first if API key is available
+    // Try openBD first for Japanese books (if ISBN looks Japanese)
+    if (this.openBDEnabled && this.isJapaneseISBN(cleanISBN)) {
+      const openBDResult = await this.searchOpenBD(cleanISBN);
+      if (openBDResult) return openBDResult;
+    }
+    
+    // Try Google Books with Japanese language preference
     if (this.googleApiKey) {
-      const googleResult = await this.searchGoogleBooks(`isbn:${cleanISBN}`);
+      const googleResult = await this.searchGoogleBooks(`isbn:${cleanISBN}`, true);
       if (googleResult) return googleResult;
     }
     
@@ -71,13 +79,22 @@ export class BookSearchPlugin {
       query += ` ${author}`;
     }
     
-    // Search Google Books
+    // Detect if query contains Japanese characters
+    const hasJapanese = this.containsJapanese(query);
+    
+    // Search openBD first for Japanese queries
+    if (hasJapanese && this.openBDEnabled) {
+      const openBDResults = await this.searchOpenBDByTitle(title, author);
+      results.push(...openBDResults);
+    }
+    
+    // Search Google Books with language preference
     if (this.googleApiKey) {
-      const googleResults = await this.searchGoogleBooksMultiple(query);
+      const googleResults = await this.searchGoogleBooksMultiple(query, hasJapanese);
       results.push(...googleResults);
     }
     
-    // Search Open Library if no Google results
+    // Search Open Library if no results from primary sources
     if (results.length === 0 && this.openLibraryEnabled) {
       const openLibResults = await this.searchOpenLibraryByTitle(title, author);
       results.push(...openLibResults);
@@ -86,10 +103,72 @@ export class BookSearchPlugin {
     return results;
   }
 
-  private async searchGoogleBooks(query: string): Promise<BookMetadata | null> {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}${
-      this.googleApiKey ? `&key=${this.googleApiKey}` : ''
-    }`;
+  private isJapaneseISBN(isbn: string): boolean {
+    // Japanese ISBN prefixes: 978-4 (most common) and some 979 ranges
+    return isbn.startsWith('9784') || isbn.startsWith('4');
+  }
+
+  private containsJapanese(text: string): boolean {
+    // Check for Hiragana, Katakana, and Kanji
+    const japaneseRegex = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/;
+    return japaneseRegex.test(text);
+  }
+
+  private async searchOpenBD(isbn: string): Promise<BookMetadata | null> {
+    const url = `https://api.openbd.jp/v1/get?isbn=${isbn}`;
+    
+    try {
+      const data = await this.fetchJSON(url);
+      
+      if (data && data.length > 0 && data[0]) {
+        const book = data[0];
+        const summary = book.summary;
+        const onix = book.onix;
+        
+        if (!summary) return null;
+        
+        return {
+          title: summary.title,
+          author: summary.author ? summary.author.split(',').map((a: string) => a.trim()) : [],
+          isbn: summary.isbn,
+          publisher: summary.publisher,
+          publishedDate: summary.pubdate,
+          description: onix?.CollateralDetail?.TextContent?.find((t: any) => t.TextType === '03')?.Text,
+          pageCount: onix?.DescriptiveDetail?.Extent?.find((e: any) => e.ExtentType === '00')?.ExtentValue,
+          categories: onix?.DescriptiveDetail?.Subject?.map((s: any) => s.SubjectHeadingText) || [],
+          thumbnail: summary.cover,
+          language: 'ja', // openBD is primarily Japanese
+          rating: undefined,
+        };
+      }
+    } catch (error) {
+      console.error('openBD API error:', error);
+    }
+    
+    return null;
+  }
+
+  private async searchOpenBDByTitle(title: string, author?: string): Promise<BookMetadata[]> {
+    // openBD doesn't have direct title search, but we can try with known ISBNs
+    // This is a limitation - for comprehensive title search, we rely on Google Books
+    const results: BookMetadata[] = [];
+    
+    // For now, return empty array as openBD doesn't support title-based search
+    // Future enhancement could include integration with other Japanese book databases
+    return results;
+  }
+
+  private async searchGoogleBooks(query: string, preferJapanese: boolean = false): Promise<BookMetadata | null> {
+    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`;
+    
+    // Add Japanese language preference
+    if (preferJapanese) {
+      url += `&langRestrict=ja&country=JP`;
+    }
+    
+    if (this.googleApiKey) {
+      url += `&key=${this.googleApiKey}`;
+    }
     
     try {
       const data = await this.fetchJSON(url);
@@ -119,10 +198,17 @@ export class BookSearchPlugin {
     return null;
   }
 
-  private async searchGoogleBooksMultiple(query: string): Promise<BookMetadata[]> {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5${
-      this.googleApiKey ? `&key=${this.googleApiKey}` : ''
-    }`;
+  private async searchGoogleBooksMultiple(query: string, preferJapanese: boolean = false): Promise<BookMetadata[]> {
+    let url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5`;
+    
+    // Add Japanese language preference
+    if (preferJapanese) {
+      url += `&langRestrict=ja&country=JP`;
+    }
+    
+    if (this.googleApiKey) {
+      url += `&key=${this.googleApiKey}`;
+    }
     
     const results: BookMetadata[] = [];
     
@@ -334,10 +420,11 @@ export class BookSearchPlugin {
    */
   async searchByAuthor(author: string): Promise<BookMetadata[]> {
     const results: BookMetadata[] = [];
+    const hasJapanese = this.containsJapanese(author);
     
-    // Search Google Books by author
+    // Search Google Books by author with language preference
     if (this.googleApiKey) {
-      const googleResults = await this.searchGoogleBooksMultiple(`inauthor:${author}`);
+      const googleResults = await this.searchGoogleBooksMultiple(`inauthor:${author}`, hasJapanese);
       results.push(...googleResults);
     }
     
@@ -355,10 +442,11 @@ export class BookSearchPlugin {
    */
   async searchByGenre(genre: string): Promise<BookMetadata[]> {
     const results: BookMetadata[] = [];
+    const hasJapanese = this.containsJapanese(genre);
     
-    // Search Google Books by subject/category
+    // Search Google Books by subject/category with language preference
     if (this.googleApiKey) {
-      const googleResults = await this.searchGoogleBooksMultiple(`subject:${genre}`);
+      const googleResults = await this.searchGoogleBooksMultiple(`subject:${genre}`, hasJapanese);
       results.push(...googleResults);
     }
     
@@ -404,6 +492,8 @@ export class BookSearchPlugin {
       if (seedTitle) query += seedTitle;
       if (seedAuthor) query += ` ${seedAuthor}`;
       
+      const hasJapanese = this.containsJapanese(query);
+      
       if (query) {
         // First, find the seed book to get its categories
         const seedBooks = await this.searchByTitle(seedTitle || '', seedAuthor);
@@ -418,7 +508,7 @@ export class BookSearchPlugin {
       } else {
         // General recommendations (popular books)
         if (this.googleApiKey) {
-          const popularBooks = await this.searchGoogleBooksMultiple('bestseller');
+          const popularBooks = await this.searchGoogleBooksMultiple('bestseller', hasJapanese);
           results.push(...popularBooks);
         }
       }
