@@ -50,6 +50,7 @@ claude_config.json
 
 # Documentation (if you want to manage separately)
 docs/
+test/
 
 # Installation guide (if generated)
 INSTALL.md
